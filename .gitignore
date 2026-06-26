@@ -25,3 +25,5 @@ tests/asm/macro.S68
 tests/sim/*.S68
 tests/sim/*.L68
 tests/sim/*.easytmp
+games/easyzone/*.S68
+games/easyzone/*.L68
