@@ -571,14 +571,22 @@ void put (int32_t *dest, int32_t source, int32_t size)
 //  else          // else dest is register
 //    *dest = (source & size) | (*dest & ~size);
 
-  // if dest is register (the 68000 register globals D..inst are laid out
-  // contiguously; memory[] is a separate heap block). Use uintptr_t so the
-  // address comparison is correct on 64-bit hosts (a plain int cast would
-  // truncate the heap pointer and could alias the register range).
-  if ( ( (uintptr_t)dest >= (uintptr_t)&D[0] ) && ( (uintptr_t)dest < (uintptr_t)&inst ) )
-    *dest = (source & size) | (*dest & ~size);
-  else          // else dest is memory
+  // Discriminate register vs memory by the memory[] block, NOT by a
+  // register-address window.  memory[] is a single contiguous calloc'd
+  // region with well-defined bounds; the register globals (D, A, PC, ...)
+  // live in __DATA/bss and are always disjoint from it.  The old window
+  // test ([&D[0],&inst)) assumed the linker laid the register globals out
+  // contiguously in source order -- true under Borland/Win32 but NOT under
+  // clang/ld64, which reorders them (A[] and result fell outside the
+  // window, so A-register operands and CMP results were silently routed to
+  // memory).  This block test is order-independent and matches the
+  // original's own (commented-out) intent.  uintptr_t keeps the comparison
+  // correct on 64-bit hosts.
+  if ( ( (uintptr_t)dest >= (uintptr_t)&memory[0] ) &&
+       ( (uintptr_t)dest <  (uintptr_t)&memory[0] + MEMSIZE ) )
     mem_put (source, (int) ((uintptr_t)dest - (uintptr_t)&memory[0]), size);
+  else          // else dest is register
+    *dest = (source & size) | (*dest & ~size);
 }
 
 /**************************** int value_of() *******************************
@@ -606,11 +614,14 @@ void value_of (int32_t *EA, int32_t *EV, int32_t size)
 //  else
 //    mem_req ( (int) ((int)EA - (int)&memory[0]), size, EV);
 
-  // if EA is register (see put() above for the uintptr_t rationale)
-  if ( ( (uintptr_t)EA >= (uintptr_t)&D[0] ) && ( (uintptr_t)EA < (uintptr_t)&inst ) )
-    *EV = *EA & size;
-  else          // else EA is memory
+  // Discriminate by the memory[] block, not a register-address window
+  // (see put() above for the full rationale -- clang reorders the register
+  // globals so the window test mis-routed A registers and CMP results).
+  if ( ( (uintptr_t)EA >= (uintptr_t)&memory[0] ) &&
+       ( (uintptr_t)EA <  (uintptr_t)&memory[0] + MEMSIZE ) )
     mem_req ( (int) ((uintptr_t)EA - (uintptr_t)&memory[0]), size, EV);
+  else          // else EA is register
+    *EV = *EA & size;
 }
 
 

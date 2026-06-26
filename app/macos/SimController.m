@@ -5,6 +5,8 @@
 #import "SimController.h"
 #import "SimCore.h"
 #import "SimBridge.h"
+#import "SimGraphicsView.h"
+#import "SimGfxBridge.h"
 #import <stdlib.h>
 #import <string.h>
 
@@ -16,7 +18,7 @@ static NSToolbarItemIdentifier const kReset = @"sim.reset";
 
 @interface SimController () <NSToolbarDelegate, NSTextFieldDelegate>
 @property (nonatomic, strong) NSTextView *registersView;
-@property (nonatomic, strong) NSTextView *consoleView;
+@property (nonatomic, strong) SimGraphicsView *gfxView;
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
 @property (nonatomic, strong) NSTextField *statusField;
@@ -28,6 +30,7 @@ static NSToolbarItemIdentifier const kReset = @"sim.reset";
 @property (nonatomic) uint32_t memBase;
 @property (nonatomic, copy) NSString *programName;
 @property (nonatomic, copy) NSString *srecPath;
+@property (nonatomic, strong) NSMutableString *consoleText;   // capture for /console
 - (void)appendConsole:(NSString *)s newline:(BOOL)nl;
 - (int)readLineInto:(char *)buf size:(int)size outLen:(int *)outLen;
 - (void)refreshState;
@@ -43,7 +46,8 @@ static void cbTextOut(void *ctx, const char *s, int nl) {
 }
 static void cbCharOut(void *ctx, char ch) {
     SimController *c = (__bridge SimController *)ctx;
-    [c appendConsole:[NSString stringWithFormat:@"%c", ch] newline:NO];
+    char str[2] = { ch, 0 };
+    [c appendConsole:[NSString stringWithUTF8String:str] newline:NO];
 }
 static int cbReadLine(void *ctx, char *buf, int size, int *outLen) {
     SimController *c = (__bridge SimController *)ctx;
@@ -57,7 +61,8 @@ static void cbCharIn(void *ctx, char *ch) {
 }
 static void cbClear(void *ctx) {
     SimController *c = (__bridge SimController *)ctx;
-    dispatch_async(dispatch_get_main_queue(), ^{ c.consoleView.string = @""; });
+    [c.consoleText setString:@""];
+    gfx_clear();
 }
 static void cbMessage(void *ctx, const char *s) {
     SimController *c = (__bridge SimController *)ctx;
@@ -159,12 +164,17 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     vsplit.vertical = NO; vsplit.dividerStyle = NSSplitViewDividerStyleThin;
     [hsplit addSubview:vsplit];
 
-    // Console (output + input field)
+    // I/O surface: the graphics canvas (renders both graphics + text) in a
+    // scroll view, with the input field beneath it.
     NSView *consoleBox = [[NSView alloc] initWithFrame:content.bounds];
-    NSScrollView *conScroll = [[NSScrollView alloc] initWithFrame:content.bounds];
-    self.consoleView = MonoTextView(conScroll, NO);
-    conScroll.translatesAutoresizingMaskIntoConstraints = NO;
-    [consoleBox addSubview:conScroll];
+    NSScrollView *gfxScroll = [[NSScrollView alloc] initWithFrame:content.bounds];
+    gfxScroll.hasVerticalScroller = YES; gfxScroll.hasHorizontalScroller = YES;
+    gfxScroll.borderType = NSNoBorder;
+    gfxScroll.backgroundColor = NSColor.blackColor;
+    gfxScroll.translatesAutoresizingMaskIntoConstraints = NO;
+    self.gfxView = [[SimGraphicsView alloc] initWithFrame:NSMakeRect(0,0,640,480)];
+    gfxScroll.documentView = self.gfxView;
+    [consoleBox addSubview:gfxScroll];
 
     NSTextField *input = [[NSTextField alloc] init];
     input.placeholderString = @"input…";
@@ -176,15 +186,16 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     self.inputField = input;
     [consoleBox addSubview:input];
     [NSLayoutConstraint activateConstraints:@[
-        [conScroll.topAnchor constraintEqualToAnchor:consoleBox.topAnchor],
-        [conScroll.leadingAnchor constraintEqualToAnchor:consoleBox.leadingAnchor],
-        [conScroll.trailingAnchor constraintEqualToAnchor:consoleBox.trailingAnchor],
-        [conScroll.bottomAnchor constraintEqualToAnchor:input.topAnchor constant:-4],
+        [gfxScroll.topAnchor constraintEqualToAnchor:consoleBox.topAnchor],
+        [gfxScroll.leadingAnchor constraintEqualToAnchor:consoleBox.leadingAnchor],
+        [gfxScroll.trailingAnchor constraintEqualToAnchor:consoleBox.trailingAnchor],
+        [gfxScroll.bottomAnchor constraintEqualToAnchor:input.topAnchor constant:-4],
         [input.leadingAnchor constraintEqualToAnchor:consoleBox.leadingAnchor constant:6],
         [input.trailingAnchor constraintEqualToAnchor:consoleBox.trailingAnchor constant:-6],
         [input.bottomAnchor constraintEqualToAnchor:consoleBox.bottomAnchor constant:-6],
     ]];
     [vsplit addSubview:consoleBox];
+    gfx_setActiveView((__bridge void *)self.gfxView);
 
     // Memory
     NSScrollView *memScroll = [[NSScrollView alloc] initWithFrame:content.bounds];
@@ -255,7 +266,11 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     initSim();
     memset(memory, 0, SIM_MEMSIZE);
     int rc = loadSrec((char *)srecPath.fileSystemRepresentation);
-    self.consoleView.string = @"";
+    OLD_PC = PC;        // prime the current-instruction tracker to the start
+                        // address (the GUI's run handler does this; the first
+                        // relative branch needs OLD_PC == its own address)
+    [self.consoleText setString:@""];
+    [self.gfxView clearScreen];
     self.programLoaded = (rc == 0 /*SUCCESS*/);
     self.memBase = (uint32_t)PC & 0xFFFFF0;
     [self refreshState];
@@ -310,14 +325,11 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 #pragma mark Console + input
 
 - (void)appendConsole:(NSString *)s newline:(BOOL)nl {
-    NSString *text = nl ? [s stringByAppendingString:@"\n"] : s;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSTextStorage *ts = self.consoleView.textStorage;
-        NSDictionary *attrs = @{ NSFontAttributeName: self.consoleView.font ?: [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular],
-                                 NSForegroundColorAttributeName: NSColor.labelColor };
-        [ts appendAttributedString:[[NSAttributedString alloc] initWithString:text attributes:attrs]];
-        [self.consoleView scrollRangeToVisible:NSMakeRange(ts.length, 0)];
-    });
+    if (!self.consoleText) self.consoleText = [NSMutableString string];
+    [self.consoleText appendString:s];
+    if (nl) [self.consoleText appendString:@"\n"];
+    // Render onto the graphics canvas (the I/O surface).
+    gfx_textOut(s.UTF8String ?: "", nl ? 1 : 0);
 }
 
 - (int)readLineInto:(char *)buf size:(int)size outLen:(int *)outLen {
@@ -426,7 +438,7 @@ static NSString *Flags(short sr) {
     return m;
 }
 
-- (NSString *)remoteConsole { return self.consoleView.string ?: @""; }
+- (NSString *)remoteConsole { return self.consoleText ?: @""; }
 
 - (void)refreshMemory {
     if (!memory) return;

@@ -22,7 +22,7 @@ extern int  runprog(void);
 
 /* ---- simulator state (globals.c) ---- */
 extern char     *memory;
-extern int32_t   PC;
+extern int32_t   PC, OLD_PC;
 extern int32_t   D[], A[];
 extern short     SR;
 extern uint64_t  cycles;
@@ -55,6 +55,8 @@ int main(int argc, char **argv)
         free(memory);
         return 1;
     }
+    OLD_PC = PC;        // prime the current-instruction tracker to the start
+                        // address so the first relative branch resolves right
 
     /* Run continuously until the program halts (SIMHALT / TRAP #15 task 9)
      * or a breakpoint forces trace mode. runprog() executes one instruction

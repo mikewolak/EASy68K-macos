@@ -11,6 +11,7 @@
 #include <string.h>
 #include "simhost.h"
 #include "SimBridge.h"
+#include "SimGfxBridge.h"     // routes graphics/text to the SimGraphicsView
 
 static SimBridgeCallbacks gCB;
 
@@ -22,6 +23,8 @@ void SimBridge_install(SimBridgeCallbacks cb) {
  *  simIO device — text console routed to the Cocoa I/O view; graphics,
  *  sound, comm and networking are no-ops (a later phase can add them).
  * ------------------------------------------------------------------ */
+// Text goes through the controller (it captures for the remote /console API
+// AND forwards to the graphics canvas for display).
 static void io_textOut(const char *s)   { if (gCB.textOut) gCB.textOut(gCB.ctx, s, 0); }
 static void io_textOutCR(const char *s) { if (gCB.textOut) gCB.textOut(gCB.ctx, s, 1); }
 static void io_charOut(char ch)         { if (gCB.charOut) gCB.charOut(gCB.ctx, ch); }
@@ -36,31 +39,31 @@ static void io_textIn(char *buf, int32_t *len, int32_t *num) {
 }
 
 static void io_clear(void)              { if (gCB.clearConsole) gCB.clearConsole(gCB.ctx); }
-static void io_gotorc(int x, int y)     { (void)x; (void)y; }
-static void io_getrc(short *d1)         { if (d1) *d1 = 0; }
+static void io_gotorc(int x, int y)     { gfx_gotorc(y, x); }   // D1: col(high)/row(low)
+static void io_getrc(short *d1)         { int row=0,col=0; gfx_getrc(&row,&col); if(d1)*d1=(short)((col<<8)|(row&0xFF)); }
 static void io_getCharAt(ushort r, ushort c, char *d1){ (void)r;(void)c; if(d1)*d1=0; }
 static void io_scrollRect(ushort r, ushort c, ushort w, ushort h, ushort d){(void)r;(void)c;(void)w;(void)h;(void)d;}
-static void io_setFontProperties(int c, int s){(void)c;(void)s;}
-static void io_getKeyState(int32_t *d1){ if(d1)*d1=0; }
-static void io_setupWindow(void){}
-static void io_setWindowSize(unsigned short w,unsigned short h){(void)w;(void)h;}
-static void io_getWindowSize(unsigned short *w,unsigned short *h){ if(w)*w=0; if(h)*h=0; }
-static void io_drawPixel(int x,int y){(void)x;(void)y;}
-static int  io_getPixel(int x,int y){(void)x;(void)y;return 0;}
-static void io_line(int a,int b,int c,int d){(void)a;(void)b;(void)c;(void)d;}
-static void io_lineTo(int x,int y){(void)x;(void)y;}
-static void io_moveTo(int x,int y){(void)x;(void)y;}
-static void io_getXY(short*x,short*y){ if(x)*x=0; if(y)*y=0; }
-static void io_setLineColor(int c){(void)c;}
-static void io_setFillColor(int c){(void)c;}
-static void io_rectangle(int a,int b,int c,int d){(void)a;(void)b;(void)c;(void)d;}
-static void io_ellipse(int a,int b,int c,int d){(void)a;(void)b;(void)c;(void)d;}
-static void io_floodFill(int x,int y){(void)x;(void)y;}
-static void io_unfilledRectangle(int a,int b,int c,int d){(void)a;(void)b;(void)c;(void)d;}
-static void io_unfilledEllipse(int a,int b,int c,int d){(void)a;(void)b;(void)c;(void)d;}
-static void io_setDrawingMode(int m){(void)m;}
-static void io_setPenWidth(int w){(void)w;}
-static void io_drawText(const char*s,int x,int y){(void)s;(void)x;(void)y;}
+static void io_setFontProperties(int c, int s){ gfx_setFont((uint32_t)c, s & 0xFF ? (s>>16)&0xFF : 0); }
+static void io_getKeyState(int32_t *d1){ if(d1) *d1 = (int32_t)gfx_getKeyState((uint32_t)*d1); }
+static void io_setupWindow(void){ gfx_setWindowSize(0,0); }
+static void io_setWindowSize(unsigned short w,unsigned short h){ gfx_setWindowSize(w,h); }
+static void io_getWindowSize(unsigned short *w,unsigned short *h){ int ww=0,hh=0; gfx_getWindowSize(&ww,&hh); if(w)*w=(unsigned short)ww; if(h)*h=(unsigned short)hh; }
+static void io_drawPixel(int x,int y){ gfx_drawPixel(x,y); }
+static int  io_getPixel(int x,int y){ return (int)gfx_getPixel(x,y); }
+static void io_line(int a,int b,int c,int d){ gfx_line(a,b,c,d); }
+static void io_lineTo(int x,int y){ gfx_lineTo(x,y); }
+static void io_moveTo(int x,int y){ gfx_moveTo(x,y); }
+static void io_getXY(short*x,short*y){ int xx=0,yy=0; gfx_getXY(&xx,&yy); if(x)*x=(short)xx; if(y)*y=(short)yy; }
+static void io_setLineColor(int c){ gfx_setLineColor((uint32_t)c); }
+static void io_setFillColor(int c){ gfx_setFillColor((uint32_t)c); }
+static void io_rectangle(int a,int b,int c,int d){ gfx_rect(a,b,c,d,1); }
+static void io_ellipse(int a,int b,int c,int d){ gfx_ellipse(a,b,c,d,1); }
+static void io_floodFill(int x,int y){ gfx_floodFill(x,y); }
+static void io_unfilledRectangle(int a,int b,int c,int d){ gfx_rect(a,b,c,d,0); }
+static void io_unfilledEllipse(int a,int b,int c,int d){ gfx_ellipse(a,b,c,d,0); }
+static void io_setDrawingMode(int m){ gfx_setPenMode(m); }
+static void io_setPenWidth(int w){ gfx_setPenWidth(w); }
+static void io_drawText(const char*s,int x,int y){ gfx_drawText(s,x,y); }
 static void io_FormPaint(void*s){(void)s;}
 static void io_playSound(char*f,short*r){(void)f; if(r)*r=0;}
 static void io_loadSound(char*f,int i){(void)f;(void)i;}
