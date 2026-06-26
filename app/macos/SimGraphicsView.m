@@ -1,3 +1,15 @@
+/*
+ * EASy68K for macOS
+ *
+ * Copyright (c) 2026 mikewolak@gmail.com  —  Epromfoundry, Inc.
+ * All rights reserved.
+ *
+ * ****  NOT FOR COMMERCIAL USE  ****
+ * This software is licensed for PERSONAL and EDUCATIONAL use ONLY.
+ * Any commercial use, sale, or distribution for profit is STRICTLY
+ * PROHIBITED without the prior written permission of Epromfoundry, Inc.
+ */
+
 //
 //  SimGraphicsView.m
 //  EASy68K — simulator I/O drawing surface (CoreGraphics backbuffer).
@@ -342,18 +354,73 @@ static CGColorRef bgrColor(uint32_t c) {
 
 #pragma mark Keyboard
 
+// EASy68K's keyboard model (TRAP #15 task 19) indexes a keys[256] array by
+// Windows Virtual-Key code -- that is the general contract every program uses,
+// so we translate macOS key events to the corresponding Win32 VK code. Letters
+// map to their uppercase ASCII (== VK_A..VK_Z), digits to ASCII, and the
+// navigation/function/control keys to their VK_* values.
+static int macCharToVK(unichar c) {
+    if (c >= 'a' && c <= 'z') return c - ('a' - 'A');        // VK_A..VK_Z
+    if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) return c;
+    switch (c) {
+        case ' ':                 return 0x20;  // VK_SPACE
+        case '\r': case 0x03:     return 0x0D;  // VK_RETURN
+        case '\t':                return 0x09;  // VK_TAB
+        case 0x1B:                return 0x1B;  // VK_ESCAPE
+        case 0x7F: case 0x08:     return 0x08;  // VK_BACK
+        case NSLeftArrowFunctionKey:  return 0x25;  // VK_LEFT
+        case NSUpArrowFunctionKey:    return 0x26;  // VK_UP
+        case NSRightArrowFunctionKey: return 0x27;  // VK_RIGHT
+        case NSDownArrowFunctionKey:  return 0x28;  // VK_DOWN
+        case NSHomeFunctionKey:       return 0x24;  // VK_HOME
+        case NSEndFunctionKey:        return 0x23;  // VK_END
+        case NSPageUpFunctionKey:     return 0x21;  // VK_PRIOR
+        case NSPageDownFunctionKey:   return 0x22;  // VK_NEXT
+        case NSInsertFunctionKey:     return 0x2D;  // VK_INSERT
+        case NSDeleteFunctionKey:     return 0x2E;  // VK_DELETE
+    }
+    if (c >= NSF1FunctionKey && c <= NSF1FunctionKey + 23)
+        return 0x70 + (int)(c - NSF1FunctionKey);   // VK_F1..VK_F24
+    if (c < 0x80) return (int)c;                     // punctuation fallback
+    return 0;
+}
+
 - (void)keyDown:(NSEvent *)e {
     NSString *chars = e.charactersIgnoringModifiers;
-    if (chars.length) { unichar c = [chars characterAtIndex:0]; if (c<256){ _keyDown[c]=1; _lastKeyDown=c; } }
+    if (chars.length) {
+        int vk = macCharToVK([chars characterAtIndex:0]);
+        fprintf(stderr,"[keyDown] char=0x%04x vk=0x%02x\n",(unsigned)[chars characterAtIndex:0],vk); // DEBUG
+        if (vk > 0 && vk < 256) { _keyDown[vk] = 1; _lastKeyDown = vk; }
+    }
 }
 - (void)keyUp:(NSEvent *)e {
     NSString *chars = e.charactersIgnoringModifiers;
-    if (chars.length) { unichar c = [chars characterAtIndex:0]; if (c<256){ _keyDown[c]=0; _lastKeyUp=c; } }
+    if (chars.length) {
+        int vk = macCharToVK([chars characterAtIndex:0]);
+        if (vk > 0 && vk < 256) { _keyDown[vk] = 0; _lastKeyUp = vk; }
+    }
 }
+// Modifier keys arrive via flagsChanged, not keyDown/keyUp.
+- (void)flagsChanged:(NSEvent *)e {
+    NSEventModifierFlags f = e.modifierFlags;
+    _keyDown[0x10] = (f & NSEventModifierFlagShift)   ? 1 : 0;  // VK_SHIFT
+    _keyDown[0x11] = (f & NSEventModifierFlagControl) ? 1 : 0;  // VK_CONTROL
+    _keyDown[0x12] = (f & NSEventModifierFlagOption)  ? 1 : 0;  // VK_MENU (Alt)
+}
+
 - (uint32_t)keyStateForCodes:(uint32_t)codes {
-    // D1.L holds up to 4 key codes; return each byte $FF if down else $00.
+    // Faithful to TRAP task 19: if codes==0, return (lastUp<<16)|lastDown;
+    // otherwise each of the 4 code bytes -> 0xFF in its position if that key
+    // is currently down.
+    if (codes == 0)
+        return (uint32_t)(((_lastKeyUp & 0xFF) << 16) | (_lastKeyDown & 0xFF));
     uint32_t out = 0;
-    for (int i=0;i<4;i++){ uint8_t k=(codes>>(i*8))&0xFF; if(k && k<256 && _keyDown[k]) out |= (0xFFu<<(i*8)); }
+    for (int i = 0; i < 4; i++) {
+        uint8_t k = (codes >> (i*8)) & 0xFF;
+        if (_keyDown[k]) out |= (0xFFu << (i*8));
+    }
+    { static uint32_t lastq=0xDEAD; if (codes!=lastq){ lastq=codes;
+        fprintf(stderr,"[getKeyState] query codes=0x%08x -> 0x%08x\n",codes,out);} } // DEBUG
     return out;
 }
 - (void)lastKeyUp:(int *)up down:(int *)down { if(up)*up=_lastKeyUp; if(down)*down=_lastKeyDown; }

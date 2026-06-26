@@ -1,3 +1,15 @@
+/*
+ * EASy68K for macOS
+ *
+ * Copyright (c) 2026 mikewolak@gmail.com  —  Epromfoundry, Inc.
+ * All rights reserved.
+ *
+ * ****  NOT FOR COMMERCIAL USE  ****
+ * This software is licensed for PERSONAL and EDUCATIONAL use ONLY.
+ * Any commercial use, sale, or distribution for profit is STRICTLY
+ * PROHIBITED without the prior written permission of Epromfoundry, Inc.
+ */
+
 //
 //  SimController.m
 //  EASy68K — native 68000 simulator window.
@@ -6,6 +18,7 @@
 #import "SimCore.h"
 #import "SimBridge.h"
 #import "SimGraphicsView.h"
+#import "SimListingView.h"
 #import "SimGfxBridge.h"
 #import <stdlib.h>
 #import <string.h>
@@ -18,7 +31,9 @@ static NSToolbarItemIdentifier const kReset = @"sim.reset";
 
 @interface SimController () <NSToolbarDelegate, NSTextFieldDelegate>
 @property (nonatomic, strong) NSTextView *registersView;
+@property (nonatomic, strong) SimListingView *listingView;   // .L68 source pane
 @property (nonatomic, strong) SimGraphicsView *gfxView;
+@property (nonatomic, strong) NSWindow *ioWindow;            // separate I/O window
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
 @property (nonatomic, strong) NSTextField *statusField;
@@ -164,43 +179,20 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     vsplit.vertical = NO; vsplit.dividerStyle = NSSplitViewDividerStyleThin;
     [hsplit addSubview:vsplit];
 
-    // I/O surface: the graphics canvas (renders both graphics + text) in a
-    // scroll view, with the input field beneath it.
-    NSView *consoleBox = [[NSView alloc] initWithFrame:content.bounds];
-    NSScrollView *gfxScroll = [[NSScrollView alloc] initWithFrame:content.bounds];
-    gfxScroll.hasVerticalScroller = YES; gfxScroll.hasHorizontalScroller = YES;
-    gfxScroll.borderType = NSNoBorder;
-    gfxScroll.backgroundColor = NSColor.blackColor;
-    gfxScroll.translatesAutoresizingMaskIntoConstraints = NO;
-    self.gfxView = [[SimGraphicsView alloc] initWithFrame:NSMakeRect(0,0,640,480)];
-    gfxScroll.documentView = self.gfxView;
-    [consoleBox addSubview:gfxScroll];
+    // Center: the .L68 source-level listing (the main debugging view, with
+    // PC-line highlight + breakpoint gutter) — same role as the original
+    // Sim68K ListBox1. The I/O graphics live in their own window.
+    self.listingView = [[SimListingView alloc] initWithFrame:content.bounds];
+    self.listingView.listingDelegate = (id)self;
+    [vsplit addSubview:self.listingView];
 
-    NSTextField *input = [[NSTextField alloc] init];
-    input.placeholderString = @"input…";
-    input.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
-    input.translatesAutoresizingMaskIntoConstraints = NO;
-    input.target = self; input.action = @selector(inputEntered:);
-    input.delegate = self;
-    input.enabled = NO;
-    self.inputField = input;
-    [consoleBox addSubview:input];
-    [NSLayoutConstraint activateConstraints:@[
-        [gfxScroll.topAnchor constraintEqualToAnchor:consoleBox.topAnchor],
-        [gfxScroll.leadingAnchor constraintEqualToAnchor:consoleBox.leadingAnchor],
-        [gfxScroll.trailingAnchor constraintEqualToAnchor:consoleBox.trailingAnchor],
-        [gfxScroll.bottomAnchor constraintEqualToAnchor:input.topAnchor constant:-4],
-        [input.leadingAnchor constraintEqualToAnchor:consoleBox.leadingAnchor constant:6],
-        [input.trailingAnchor constraintEqualToAnchor:consoleBox.trailingAnchor constant:-6],
-        [input.bottomAnchor constraintEqualToAnchor:consoleBox.bottomAnchor constant:-6],
-    ]];
-    [vsplit addSubview:consoleBox];
-    gfx_setActiveView((__bridge void *)self.gfxView);
-
-    // Memory
+    // Bottom: memory hex dump
     NSScrollView *memScroll = [[NSScrollView alloc] initWithFrame:content.bounds];
     self.memoryView = MonoTextView(memScroll, NO);
     [vsplit addSubview:memScroll];
+
+    // The separate I/O window (graphics canvas + console input).
+    [self buildIOWindow];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [hsplit setPosition:250 ofDividerAtIndex:0];
@@ -218,6 +210,57 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
         [status.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-5],
     ]];
     self.statusField = status;
+}
+
+// The simulator I/O window (separate from the main listing window, matching the
+// original Sim68K's separate simIO form): the graphics/text canvas plus the
+// console input field.
+- (void)buildIOWindow {
+    NSRect frame = NSMakeRect(0, 0, 660, 540);
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:frame
+        styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+        backing:NSBackingStoreBuffered defer:NO];
+    w.title = @"Output";
+    w.releasedWhenClosed = NO;
+    NSView *box = w.contentView;
+
+    NSScrollView *gfxScroll = [[NSScrollView alloc] initWithFrame:box.bounds];
+    gfxScroll.hasVerticalScroller = YES; gfxScroll.hasHorizontalScroller = YES;
+    gfxScroll.borderType = NSNoBorder;
+    gfxScroll.backgroundColor = NSColor.blackColor;
+    gfxScroll.translatesAutoresizingMaskIntoConstraints = NO;
+    self.gfxView = [[SimGraphicsView alloc] initWithFrame:NSMakeRect(0,0,640,480)];
+    gfxScroll.documentView = self.gfxView;
+    [box addSubview:gfxScroll];
+
+    NSTextField *input = [[NSTextField alloc] init];
+    input.placeholderString = @"input…";
+    input.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
+    input.translatesAutoresizingMaskIntoConstraints = NO;
+    input.target = self; input.action = @selector(inputEntered:);
+    input.delegate = self;
+    input.enabled = NO;
+    self.inputField = input;
+    [box addSubview:input];
+    [NSLayoutConstraint activateConstraints:@[
+        [gfxScroll.topAnchor constraintEqualToAnchor:box.topAnchor],
+        [gfxScroll.leadingAnchor constraintEqualToAnchor:box.leadingAnchor],
+        [gfxScroll.trailingAnchor constraintEqualToAnchor:box.trailingAnchor],
+        [gfxScroll.bottomAnchor constraintEqualToAnchor:input.topAnchor constant:-4],
+        [input.leadingAnchor constraintEqualToAnchor:box.leadingAnchor constant:6],
+        [input.trailingAnchor constraintEqualToAnchor:box.trailingAnchor constant:-6],
+        [input.bottomAnchor constraintEqualToAnchor:box.bottomAnchor constant:-6],
+    ]];
+    self.ioWindow = w;
+    gfx_setActiveView((__bridge void *)self.gfxView);
+}
+
+// Breakpoint toggled from the listing gutter. The listing view holds the
+// breakpoint set; run: snapshots it. (A dedicated Breakpoints window will hook
+// here too.)
+- (void)listingToggledBreakpointAtAddress:(uint32_t)addr enabled:(BOOL)enabled {
+    (void)addr; (void)enabled;
 }
 
 #pragma mark Toolbar
@@ -252,6 +295,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self loadProgram:srecPath title:title];
     [self showWindow:nil];
     [self.window makeKeyAndOrderFront:nil];
+    [self.ioWindow orderFront:nil];   // surface the separate I/O window
     if (self.programLoaded)
         [self run:nil];        // "Assemble and Run" executes immediately
 }
@@ -269,6 +313,12 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     OLD_PC = PC;        // prime the current-instruction tracker to the start
                         // address (the GUI's run handler does this; the first
                         // relative branch needs OLD_PC == its own address)
+    // Load the .L68 listing for source-level debugging and apply its
+    // *[sim68k] directives (breakpoints, bitfield, simhalt_off).
+    [self.listingView loadListingForSRecord:srecPath];
+    BOOL bf = NO, shoff = NO;
+    [self.listingView scanDirectivesBitfield:&bf simhaltOff:&shoff];
+    if (bf) bitfield = true;
     [self.consoleText setString:@""];
     [self.gfxView clearScreen];
     self.programLoaded = (rc == 0 /*SUCCESS*/);
@@ -284,14 +334,33 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     if (!self.programLoaded || self.running) return;
     self.running = YES;
     self.statusField.stringValue = @"Running…";
+    // Surface the I/O window and give its canvas keyboard focus so TRAP #15
+    // task 19 (getKeyState) sees live key presses while the program runs.
+    [self.ioWindow makeKeyAndOrderFront:nil];
+    [self.ioWindow makeFirstResponder:self.gfxView];
+    // Snapshot the breakpoint addresses for a lock-free check in the run loop.
+    NSArray<NSNumber *> *bpArr = [self.listingView breakpointAddresses];
+    NSUInteger nbp = bpArr.count;
+    uint32_t *bps = (uint32_t *)malloc(sizeof(uint32_t) * (nbp ? nbp : 1));
+    for (NSUInteger i = 0; i < nbp; i++) bps[i] = bpArr[i].unsignedIntValue;
     trace = false; sstep = false; halt = false; stopInstruction = false; runMode = true;
     dispatch_async(self.simQueue, ^{
-        while (runMode && !halt) runprog();
+        while (runMode && !halt) {
+            runprog();
+            if (nbp) {
+                uint32_t pc = (uint32_t)PC;
+                for (NSUInteger i = 0; i < nbp; i++)
+                    if (bps[i] == pc) { runMode = false; break; }
+            }
+        }
+        free(bps);
         dispatch_async(dispatch_get_main_queue(), ^{
             self.running = NO;
             [self refreshState];
+            BOOL atBP = [self.listingView hasBreakpointAtAddress:(uint32_t)PC];
             self.statusField.stringValue = [NSString stringWithFormat:
-                @"Halted — PC=%08X  cycles=%llu", (unsigned)PC, (unsigned long long)cycles];
+                @"%@ — PC=%08X  cycles=%llu", atBP ? @"Breakpoint" : @"Halted",
+                (unsigned)PC, (unsigned long long)cycles];
         });
     });
 }
@@ -364,6 +433,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 - (void)refreshState {
     [self refreshRegisters];
     [self refreshMemory];
+    [self.listingView highlightPC:(uint32_t)PC halted:(halt || !self.running)];
 }
 
 static NSString *Flags(short sr) {
