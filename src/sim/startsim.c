@@ -15,24 +15,16 @@ This file contains the function 'main()' and various screen management
 
 #include <stdio.h>
 #include "extern.h"
-#include "SIM68Ku.h"
-#include "Stack1.h"
-#include "Memory1.h"
-#include "simIOu.h"
-#include "hardwareu.h"
-#include "net.h"
-#include "Optionsu.h"
+#include "simhost.h"
 
-
-//void scrshow(); 	/* update register display */
 extern bool inputMode;
-extern bool disableKeyCommands;  // defined in SIM68Ku
+int netCloseSockets(void);      // net.c (stubbed for the CLI)
 
 void initSim()                   // initialization for the simulator
 {
   int	i;
 
-  Form1->AutoTraceTimer->Enabled = false;
+  simSetAutoTrace(false);
   autoTraceInProgress = false;
   simIO->clear();               // clear output window
   simIO->setWindowSize(0,0);    // reset output window size
@@ -41,12 +33,7 @@ void initSim()                   // initialization for the simulator
   simIO->setPenWidth(1);        // set default pen width
   simIO->setLineColor(clWhite);
   simIO->setFillColor(clBlack);
-  simIO->BackBuffer->Canvas->Font->Assign(Form1->FontDialogSimIO->Font);  // apply font
-  simIO->Font->Assign(Form1->FontDialogSimIO->Font);
-
-  Form1->ListBox1->Font->Assign(Form1->FontDialogSource->Font);  // apply font
-  Form1->HeadingsLbl->Font->Assign(Form1->FontDialogSource->Font);
-  Form1->Message->Font->Assign(Form1->FontDialogSource->Font);
+  // (font setup for the I/O and source/message views is owned by the host GUI)
 
   inputMode = false;
   pendingKey = 0;               // clear pendingKey
@@ -75,11 +62,11 @@ void initSim()                   // initialization for the simulator
   }
 
   irq = 0;                      // reset IRQ flags
-  Hardware->autoIRQoff();       // turn off auto interrupt timers
+  simHardwareAutoIRQoff();      // turn off auto interrupt timers
   hardReset = false;
 
-  Form1->setMenuActive();       // enable some menu items
-  Hardware->enable();
+  simSetMenuActive();           // enable some menu items
+  simHardwareEnable();
   FullScreenMonitor = 0;
 
   mouseX = 0;
@@ -119,57 +106,18 @@ void initSim()                   // initialization for the simulator
 
   simIO->ResetSounds(); // stop all playing sounds and clear sound memory
 
-  Form1->restoreMenuTask19();
+  simRestoreMenuTask19();
 
   netCloseSockets();    // close network sockets
 }
 
 
-void scrshow() 	        // update register display
+// Refresh the register / status / cycle display. The original built the
+// individual VCL labels here; the host now reads the live CPU state
+// (D[], A[], PC, SR, cycles) and renders it however it likes.
+void scrshow()
 {
-  String str;
-  Form1->regD0->Text = str.sprintf("%08lX",D[0]);
-  Form1->regD1->Text = str.sprintf("%08lX",D[1]);
-  Form1->regD2->Text = str.sprintf("%08lX",D[2]);
-  Form1->regD3->Text = str.sprintf("%08lX",D[3]);
-  Form1->regD4->Text = str.sprintf("%08lX",D[4]);
-  Form1->regD5->Text = str.sprintf("%08lX",D[5]);
-  Form1->regD6->Text = str.sprintf("%08lX",D[6]);
-  Form1->regD7->Text = str.sprintf("%08lX",D[7]);
-  Form1->regA0->Text = str.sprintf("%08lX",A[0]);
-  Form1->regA1->Text = str.sprintf("%08lX",A[1]);
-  Form1->regA2->Text = str.sprintf("%08lX",A[2]);
-  Form1->regA3->Text = str.sprintf("%08lX",A[3]);
-  Form1->regA4->Text = str.sprintf("%08lX",A[4]);
-  Form1->regA5->Text = str.sprintf("%08lX",A[5]);
-  Form1->regA6->Text = str.sprintf("%08lX",A[6]);
-  Form1->regA7->Text = str.sprintf("%08lX",A[a_reg(7)]);
-  Form1->regUS->Text = str.sprintf("%08lX",A[7]);
-  Form1->regA8->Text = str.sprintf("%08lX",A[8]);
-  Form1->regPC->Text = str.sprintf("%08lX",PC);
-  if (cycles > 0xFFFFFFFFFFFF)
-    Form1->cyclesDisplay->Caption = "Overflow";
-  else
-    Form1->cyclesDisplay->Caption = str.sprintf("%u",cycles);
-
-  // print each bit of SR
-  str = "";
-  for (int j=15;j>=0;j--)
-  {
-    if ((0x1 << j) & SR)
-      str += "1";
-    else
-      str += "0";
-  }
-  Form1->regSR->Text = str;
-  // If NOT (auto trace AND display is disabled)
-  if(!(autoTraceInProgress && AutoTraceOptions->DisableDisplay->Checked))
-  {
-    Form1->highlight();              // highlight the instruction
-    Form1->ListBox1->Repaint();
-    StackFrm->updateDisplay();
-    MemoryFrm->Repaint();
-  }
+  simUpdateDisplay();
 }
 
 
