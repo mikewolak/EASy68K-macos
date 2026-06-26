@@ -43,6 +43,13 @@ extern bool      halt, runMode, trace, sstep, stopInstruction;
 extern int       exceptions;
 extern bool      bitfield;
 
+// Breakpoints — the core checks these itself in runprog() (sets trace=true to
+// stop). brkpt[0..bpoints) are simple PC breakpoints; runToAddr is the
+// run-to-cursor stop address (0 = none).
+extern int       brkpt[100];
+extern char      bpoints;
+extern int       runToAddr;
+
 #ifdef __cplusplus
 }
 #endif

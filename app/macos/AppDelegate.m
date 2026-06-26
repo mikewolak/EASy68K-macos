@@ -51,6 +51,7 @@
 - (void)decreaseFontSize:(id)sender { [[E68Theme shared] decreaseFontSize]; }
 - (void)resetFontSize:(id)sender    { [[E68Theme shared] resetFontSize]; }
 - (void)showStackWindow:(id)sender  { [[SimController sharedController] showStackWindow:sender]; }
+- (void)showBreakpointsWindow:(id)sender { [[SimController sharedController] showBreakpointsWindow:sender]; }
 - (void)showLogWindow:(id)sender    { [[SimLogController shared] showLog]; }
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
@@ -157,6 +158,9 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     NSMenuItem *stackWin = Item(@"68000 Stack", @selector(showStackWindow:), @"");
     stackWin.target = self;
     [windowMenu addItem:stackWin];
+    NSMenuItem *bpWin = Item(@"Break Points", @selector(showBreakpointsWindow:), @"");
+    bpWin.target = self;
+    [windowMenu addItem:bpWin];
     NSMenuItem *logWin = Item(@"Execution Log", @selector(showLogWindow:), @"");
     logWin.target = self;
     [windowMenu addItem:logWin];

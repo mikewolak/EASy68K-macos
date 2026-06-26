@@ -20,6 +20,7 @@
 #import "SimGraphicsView.h"
 #import "SimListingView.h"
 #import "SimStackView.h"
+#import "SimBreakpointsView.h"
 #import "SimLogController.h"
 #import "SimLogBridge.h"
 #import "E68Theme.h"
@@ -40,13 +41,15 @@ static NSToolbarItemIdentifier const kReload    = @"sim.reload";
 static NSToolbarItemIdentifier const kStack     = @"sim.stack";
 static NSToolbarItemIdentifier const kLog       = @"sim.log";
 
-@interface SimController () <NSToolbarDelegate, NSTextFieldDelegate>
+@interface SimController () <NSToolbarDelegate, NSTextFieldDelegate, SimListingDelegate, SimBreakpointsDelegate>
 @property (nonatomic, strong) NSTextView *registersView;
 @property (nonatomic, strong) SimListingView *listingView;   // .L68 source pane
 @property (nonatomic, strong) SimGraphicsView *gfxView;
 @property (nonatomic, strong) NSWindow *ioWindow;            // separate I/O window
 @property (nonatomic, strong) NSWindow *stackWindow;        // 68000 Stack window
 @property (nonatomic, strong) SimStackView *stackView;
+@property (nonatomic, strong) NSWindow *bpWindow;          // Break Points window
+@property (nonatomic, strong) SimBreakpointsView *bpView;
 @property (nonatomic, strong) NSTimer *autoTraceTimer;     // AutoTrace animation
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
@@ -209,6 +212,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     // The separate I/O window (graphics canvas + console input).
     [self buildIOWindow];
     [self buildStackWindow];
+    [self buildBreakpointsWindow];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [hsplit setPosition:250 ofDividerAtIndex:0];
@@ -303,13 +307,67 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self.stackView refresh];
 }
 
+// The Break Points window (manages the core's simple PC breakpoints).
+- (void)buildBreakpointsWindow {
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 500, 340)
+        styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+        backing:NSBackingStoreBuffered defer:NO];
+    w.title = @"Break Points";
+    w.releasedWhenClosed = NO;
+    self.bpView = [[SimBreakpointsView alloc] initWithFrame:((NSView *)w.contentView).bounds];
+    self.bpView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.bpView.bpDelegate = (id)self;
+    [w.contentView addSubview:self.bpView];
+    self.bpWindow = w;
+}
+
 - (void)showLog:(id)sender { [[SimLogController shared] showLog]; }
 
-// Breakpoint toggled from the listing gutter. The listing view holds the
-// breakpoint set; run: snapshots it. (A dedicated Breakpoints window will hook
-// here too.)
+// Maintain the core's brkpt[] array so runprog() stops there natively.
+- (void)coreSetBreakpoint:(uint32_t)addr enabled:(BOOL)enabled {
+    if (enabled) {
+        for (int i = 0; i < bpoints; i++) if ((uint32_t)brkpt[i] == addr) return;
+        if (bpoints < 100) brkpt[(int)bpoints++] = (int)addr;
+    } else {
+        for (int i = 0; i < bpoints; i++)
+            if ((uint32_t)brkpt[i] == addr) {
+                for (int j = i; j < bpoints - 1; j++) brkpt[j] = brkpt[j + 1];
+                bpoints--;
+                break;
+            }
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"E68BreakpointsChanged" object:nil];
+}
+
+// SimListingDelegate — gutter toggled (the listing already updated its dot).
 - (void)listingToggledBreakpointAtAddress:(uint32_t)addr enabled:(BOOL)enabled {
-    (void)addr; (void)enabled;
+    [self coreSetBreakpoint:addr enabled:enabled];
+}
+
+// SimBreakpointsDelegate — the Break Points window adds/removes; keep the
+// listing gutter and the core's brkpt[] in sync.
+- (void)addBreakpointAtAddress:(uint32_t)addr {
+    [self.listingView setBreakpoint:addr enabled:YES];
+    [self coreSetBreakpoint:addr enabled:YES];
+}
+- (void)removeBreakpointAtAddress:(uint32_t)addr {
+    [self.listingView setBreakpoint:addr enabled:NO];
+    [self coreSetBreakpoint:addr enabled:NO];
+}
+- (void)clearAllBreakpoints {
+    for (NSNumber *a in [[self.listingView breakpointAddresses] copy])
+        [self.listingView setBreakpoint:a.unsignedIntValue enabled:NO];
+    bpoints = 0;
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"E68BreakpointsChanged" object:nil];
+}
+- (NSString *)sourceLineForAddress:(uint32_t)addr {
+    return [self.listingView instructionLineForAddress:addr];
+}
+
+- (void)showBreakpointsWindow:(id)sender {
+    [self.bpWindow makeKeyAndOrderFront:nil];
+    [self.bpView refresh];
 }
 
 #pragma mark Toolbar
@@ -381,6 +439,11 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     BOOL bf = NO, shoff = NO;
     [self.listingView scanDirectivesBitfield:&bf simhaltOff:&shoff];
     if (bf) bitfield = true;
+    // sync the core's simple-breakpoint array from the listing (gutter +
+    // *[sim68k]break directives)
+    bpoints = 0;
+    for (NSNumber *a in [self.listingView breakpointAddresses])
+        if (bpoints < 100) brkpt[(int)bpoints++] = (int)a.unsignedIntValue;
     [self.consoleText setString:@""];
     [self.gfxView clearScreen];
     self.programLoaded = (rc == 0 /*SUCCESS*/);
@@ -402,32 +465,20 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 - (void)startTrace:(BOOL)tr sstep:(BOOL)ss stopAt:(int64_t)stopAt verb:(NSString *)verb {
     if (!self.programLoaded || self.running) return;
     self.running = YES;
-    BOOL freeRun = (!tr);
-    if (freeRun) {
+    if (!tr) {       // free run / run-to-cursor
         self.statusField.stringValue = @"Running…";
         [self.ioWindow makeKeyAndOrderFront:nil];
         [self.ioWindow makeFirstResponder:self.gfxView];
     }
-    NSArray<NSNumber *> *bpArr = [self.listingView breakpointAddresses];
-    NSUInteger nbp = bpArr.count;
-    BOOL hasStop = (stopAt >= 0);
-    NSUInteger n = nbp + (hasStop ? 1 : 0);
-    uint32_t *bps = (uint32_t *)malloc(sizeof(uint32_t) * (n ? n : 1));
-    for (NSUInteger i = 0; i < nbp; i++) bps[i] = bpArr[i].unsignedIntValue;
-    if (hasStop) bps[nbp] = (uint32_t)stopAt;
+    // The core checks brkpt[] (simple breakpoints), runToAddr (run-to-cursor)
+    // and bpExpressions[] (advanced) itself in runprog(), forcing trace=true to
+    // stop — so the run loop just spins until runMode clears.
+    runToAddr = (stopAt >= 0) ? (int)stopAt : 0;
     trace = tr; sstep = ss; halt = false; stopInstruction = false;
     if (ss) stepToAddr = 0;
     runMode = true;
     dispatch_async(self.simQueue, ^{
-        while (runMode && !halt) {
-            runprog();
-            if (n) {
-                uint32_t pc = (uint32_t)PC;
-                for (NSUInteger i = 0; i < n; i++)
-                    if (bps[i] == pc) { runMode = false; break; }
-            }
-        }
-        free(bps);
+        while (runMode && !halt) runprog();
         dispatch_async(dispatch_get_main_queue(), ^{
             self.running = NO;
             [self refreshState];
