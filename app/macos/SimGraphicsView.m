@@ -4,6 +4,7 @@
 //
 #import "SimGraphicsView.h"
 #import <CoreText/CoreText.h>
+#import <CoreVideo/CoreVideo.h>
 
 #define MIN_W 640
 #define MIN_H 480
@@ -30,6 +31,22 @@
     // keyboard
     uint8_t _keyDown[256];
     int _lastKeyUp, _lastKeyDown;
+
+    // double buffering + 60 FPS vsync-locked presentation
+    CVDisplayLinkRef _displayLink;
+    CGImageRef _frontImage;     // the last completed (presented) frame
+    BOOL _doubleBuffer;         // task 92 mode 17 on / 16 off
+    BOOL _backDirty;            // back buffer changed since last present
+    uint64_t _presentSerial;    // bumped on each flip
+    uint64_t _shownSerial;      // last serial pushed to the view
+}
+
+static CVReturn simDisplayLinkCB(CVDisplayLinkRef dl, const CVTimeStamp *now,
+                                 const CVTimeStamp *out, CVOptionFlags flags,
+                                 CVOptionFlags *flagsOut, void *ctx) {
+    (void)dl;(void)now;(void)out;(void)flags;(void)flagsOut;
+    [(__bridge SimGraphicsView *)ctx vsyncTick];
+    return kCVReturnSuccess;
 }
 
 static CGColorRef bgrColor(uint32_t c) {
@@ -43,9 +60,23 @@ static CGColorRef bgrColor(uint32_t c) {
         _w = MIN_W; _h = MIN_H;
         _lineBGR = 0xFFFFFF; _fillBGR = 0x000000; _fontBGR = 0xFFFFFF;
         _penWidth = 1; _penMode = 13; _fontSize = 16;
+        _doubleBuffer = NO;
         [self rebuildContext];
+
+        // vsync-locked 60 FPS presentation: the sim thread draws into the back
+        // buffer and flips (FormPaint) to a stable front frame; the display
+        // link pushes only complete frames to the screen at the refresh rate.
+        if (CVDisplayLinkCreateWithActiveCGDisplays(&_displayLink) == kCVReturnSuccess) {
+            CVDisplayLinkSetOutputCallback(_displayLink, simDisplayLinkCB, (__bridge void *)self);
+            CVDisplayLinkStart(_displayLink);
+        }
     }
     return self;
+}
+
+- (void)dealloc {
+    if (_displayLink) { CVDisplayLinkStop(_displayLink); CVDisplayLinkRelease(_displayLink); }
+    if (_frontImage) CGImageRelease(_frontImage);
 }
 
 - (BOOL)isFlipped { return YES; }
@@ -116,7 +147,12 @@ static CGColorRef bgrColor(uint32_t c) {
 - (void)setLineColor:(uint32_t)bgr { [_lock lock]; _lineBGR=bgr; if(_lineColor)CGColorRelease(_lineColor); _lineColor=bgrColor(bgr); [_lock unlock]; }
 - (void)setFillColor:(uint32_t)bgr { [_lock lock]; _fillBGR=bgr; if(_fillColor)CGColorRelease(_fillColor); _fillColor=bgrColor(bgr); [_lock unlock]; }
 - (void)setPenWidth:(int)w { [_lock lock]; _penWidth = MAX(1,w); [_lock unlock]; }
-- (void)setDrawingMode:(int)mode { _penMode = mode & 0xFF; }
+- (void)setDrawingMode:(int)mode {
+    int m = mode & 0xFF;
+    if (m == 16)      { _doubleBuffer = NO; [self flip]; }  // disable + flush
+    else if (m == 17) { _doubleBuffer = YES; }              // enable double buffering
+    else              { _penMode = m; }                     // pen blend mode
+}
 
 - (void)applyPenMode {
     // XOR-style modes -> difference blend; everything else normal copy.
@@ -322,15 +358,39 @@ static CGColorRef bgrColor(uint32_t c) {
 }
 - (void)lastKeyUp:(int *)up down:(int *)down { if(up)*up=_lastKeyUp; if(down)*down=_lastKeyDown; }
 
-#pragma mark Display
+#pragma mark Display — double buffered, 60 FPS vsync locked
 
-- (void)markDirty {
-    dispatch_async(dispatch_get_main_queue(), ^{ self.needsDisplay = YES; });
+// Drawing primitives only mark the back buffer dirty; nothing reaches the
+// screen until a flip (FormPaint, or the display link in immediate mode).
+- (void)markDirty { _backDirty = YES; }
+
+// Snapshot the back buffer into the stable front frame (the "flip").
+- (void)snapshotLocked {
+    if (_frontImage) CGImageRelease(_frontImage);
+    _frontImage = CGBitmapContextCreateImage(_ctx);
+    _presentSerial++;
+    _backDirty = NO;
+}
+
+// TRAP #15 task 94 / FormPaint — present the completed frame.
+- (void)flip { [_lock lock]; [self snapshotLocked]; [_lock unlock]; }
+
+// Called from the CVDisplayLink at the display refresh rate (~60 Hz).
+- (void)vsyncTick {
+    [_lock lock];
+    // In immediate (non-double-buffered) mode, auto-flip dirty back buffer so
+    // console text and direct drawing appear without an explicit FormPaint.
+    if (!_doubleBuffer && _backDirty) [self snapshotLocked];
+    BOOL haveNew = (_presentSerial != _shownSerial);
+    _shownSerial = _presentSerial;
+    [_lock unlock];
+    if (haveNew)
+        dispatch_async(dispatch_get_main_queue(), ^{ self.needsDisplay = YES; });
 }
 
 - (void)drawRect:(NSRect)dirty {
     [_lock lock];
-    CGImageRef img = CGBitmapContextCreateImage(_ctx);
+    CGImageRef img = _frontImage ? CGImageRetain(_frontImage) : NULL;
     [_lock unlock];
     if (img) {
         CGContextRef c = NSGraphicsContext.currentContext.CGContext;

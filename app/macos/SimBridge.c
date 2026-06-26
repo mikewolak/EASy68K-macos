@@ -64,7 +64,7 @@ static void io_unfilledEllipse(int a,int b,int c,int d){ gfx_ellipse(a,b,c,d,0);
 static void io_setDrawingMode(int m){ gfx_setPenMode(m); }
 static void io_setPenWidth(int w){ gfx_setPenWidth(w); }
 static void io_drawText(const char*s,int x,int y){ gfx_drawText(s,x,y); }
-static void io_FormPaint(void*s){(void)s;}
+static void io_FormPaint(void*s){(void)s; gfx_present();}  // task 94: flip back->front
 static void io_playSound(char*f,short*r){(void)f; if(r)*r=0;}
 static void io_loadSound(char*f,int i){(void)f;(void)i;}
 static void io_playSoundMem(int i,short*r){(void)i; if(r)*r=0;}

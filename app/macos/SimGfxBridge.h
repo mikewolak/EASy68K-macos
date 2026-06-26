@@ -35,6 +35,7 @@ void     gfx_drawText(const char *s, int x, int y);
 void     gfx_setWindowSize(int w, int h);
 void     gfx_getWindowSize(int *w, int *h);
 void     gfx_clear(void);
+void     gfx_present(void);                // task 94 / FormPaint — flip back->front
 // text console
 void     gfx_textOut(const char *s, int withNewline);
 void     gfx_charOut(char c);

@@ -30,6 +30,7 @@ void gfx_drawText(const char *s,int x,int y){ V; [v drawText:[NSString stringWit
 void gfx_setWindowSize(int w,int h){ V; [v setCanvasWidth:w height:h]; }
 void gfx_getWindowSize(int *w,int *h){ if(!gView){ if(w)*w=0; if(h)*h=0; return;} if(w)*w=[gView canvasWidth]; if(h)*h=[gView canvasHeight]; }
 void gfx_clear(void){ V; [v clearScreen]; }
+void gfx_present(void){ V; [v flip]; }
 
 void gfx_textOut(const char *s,int nl){ V; [v textOut:[NSString stringWithUTF8String:s?:""] newline:(nl!=0)]; }
 void gfx_charOut(char c){ V; [v charOut:(unichar)(unsigned char)c]; }

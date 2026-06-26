@@ -22,6 +22,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setFillColor:(uint32_t)bgr;             // task 81
 - (void)setPenWidth:(int)w;                     // task 93
 - (void)setDrawingMode:(int)mode;               // task 92
+- (void)flip;                                   // task 94 / FormPaint — present frame
 
 // ---- primitives ----
 - (void)drawPixelX:(int)x y:(int)y;             // task 82
