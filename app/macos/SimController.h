@@ -23,6 +23,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Open (or reuse) the simulator window and load the given .S68 program.
 + (instancetype)sharedController;
 - (void)loadAndShow:(NSString *)srecPath title:(NSString *)title;
+- (void)showStackWindow:(id)sender;
 
 // ---- Remote control (used by the HTTP control server; main-thread) ----
 - (void)remoteLoad:(NSString *)srecPath title:(NSString *)title;  // load, don't run

@@ -19,6 +19,7 @@
 #import "SimBridge.h"
 #import "SimGraphicsView.h"
 #import "SimListingView.h"
+#import "SimStackView.h"
 #import "E68Theme.h"
 #import "SimGfxBridge.h"
 #import <stdlib.h>
@@ -35,6 +36,8 @@ static NSToolbarItemIdentifier const kReset = @"sim.reset";
 @property (nonatomic, strong) SimListingView *listingView;   // .L68 source pane
 @property (nonatomic, strong) SimGraphicsView *gfxView;
 @property (nonatomic, strong) NSWindow *ioWindow;            // separate I/O window
+@property (nonatomic, strong) NSWindow *stackWindow;        // 68000 Stack window
+@property (nonatomic, strong) SimStackView *stackView;
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
 @property (nonatomic, strong) NSTextField *statusField;
@@ -194,6 +197,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 
     // The separate I/O window (graphics canvas + console input).
     [self buildIOWindow];
+    [self buildStackWindow];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [hsplit setPosition:250 ofDividerAtIndex:0];
@@ -267,6 +271,25 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     ]];
     self.ioWindow = w;
     gfx_setActiveView((__bridge void *)self.gfxView);
+}
+
+// The 68000 Stack window (separate, matching the original Sim68K StackFrm).
+- (void)buildStackWindow {
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 320, 460)
+        styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+        backing:NSBackingStoreBuffered defer:NO];
+    w.title = @"68000 Stack";
+    w.releasedWhenClosed = NO;
+    self.stackView = [[SimStackView alloc] initWithFrame:((NSView *)w.contentView).bounds];
+    self.stackView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [w.contentView addSubview:self.stackView];
+    self.stackWindow = w;
+}
+
+- (void)showStackWindow:(id)sender {
+    [self.stackWindow makeKeyAndOrderFront:nil];
+    [self.stackView refresh];
 }
 
 // Breakpoint toggled from the listing gutter. The listing view holds the
@@ -447,6 +470,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self refreshRegisters];
     [self refreshMemory];
     [self.listingView highlightPC:(uint32_t)PC halted:(halt || !self.running)];
+    if (self.stackWindow.isVisible) [self.stackView refresh];
 }
 
 static NSString *Flags(short sr) {

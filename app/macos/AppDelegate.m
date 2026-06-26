@@ -49,6 +49,7 @@
 - (void)increaseFontSize:(id)sender { [[E68Theme shared] increaseFontSize]; }
 - (void)decreaseFontSize:(id)sender { [[E68Theme shared] decreaseFontSize]; }
 - (void)resetFontSize:(id)sender    { [[E68Theme shared] resetFontSize]; }
+- (void)showStackWindow:(id)sender  { [[SimController sharedController] showStackWindow:sender]; }
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
 
@@ -150,6 +151,10 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     windowItem.submenu = windowMenu;
     [windowMenu addItem:Item(@"Minimize", @selector(performMiniaturize:), @"m")];
     [windowMenu addItem:Item(@"Zoom", @selector(performZoom:), @"")];
+    [windowMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *stackWin = Item(@"68000 Stack", @selector(showStackWindow:), @"");
+    stackWin.target = self;
+    [windowMenu addItem:stackWin];
     [windowMenu addItem:[NSMenuItem separatorItem]];
     [windowMenu addItem:Item(@"Bring All to Front", @selector(arrangeInFront:), @"")];
     NSApp.windowsMenu = windowMenu;
