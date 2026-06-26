@@ -44,14 +44,20 @@ LIBCOMMON  := $(LIBDIR)/libcommon.a
 LIBASM     := $(LIBDIR)/libasm68k.a
 LIBSIM     := $(LIBDIR)/libsim68k.a
 
+# ---- macOS app -------------------------------------------------------
+APP        := build/EASy68K.app
+MACOS_SRC  := $(wildcard app/macos/*.m)
+APP_EXE    := $(APP)/Contents/MacOS/EASy68K
+
 # ---- top-level -------------------------------------------------------
-.PHONY: all libs asm68k sim68k clean test dirs
+.PHONY: all libs asm68k sim68k app run-app clean test dirs
 all: asm68k sim68k
 
 libs: $(LIBCOMMON) $(LIBASM) $(LIBSIM)
 
 asm68k: $(BINDIR)/asm68k
 sim68k: $(BINDIR)/sim68k
+app: $(APP)
 
 # ---- pattern rule for all C objects ----------------------------------
 $(OBJDIR)/%.o: src/%.c
@@ -80,6 +86,19 @@ $(BINDIR)/asm68k: app/cli/asm68k.c $(LIBASM) $(LIBCOMMON)
 $(BINDIR)/sim68k: app/cli/sim68k.c $(LIBSIM) $(LIBCOMMON)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBSIM) $(LIBCOMMON)
+
+# ---- macOS Cocoa app (Objective-C editor calling libasm68k) ----------
+# The "Run" button shells out to the bundled sim68k, so the app embeds it.
+$(APP): $(MACOS_SRC) app/macos/Info.plist $(LIBASM) $(LIBCOMMON) $(BINDIR)/sim68k
+	@mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
+	cp app/macos/Info.plist $(APP)/Contents/Info.plist
+	cp $(BINDIR)/sim68k $(APP)/Contents/MacOS/sim68k
+	$(CC) -fobjc-arc -fmodules $(CPPFLAGS) -framework Cocoa \
+	    $(MACOS_SRC) $(LIBASM) $(LIBCOMMON) -o $(APP_EXE)
+	@echo "built $(APP)"
+
+run-app: $(APP)
+	open $(APP)
 
 # ---- tests -----------------------------------------------------------
 test: asm68k sim68k
