@@ -24,6 +24,9 @@
 #include "simhost.h"
 #include "SimBridge.h"
 #include "SimGfxBridge.h"     // routes graphics/text to the SimGraphicsView
+#include "SimLogBridge.h"     // pretty-prints .L68 source lines into the log
+
+extern int PC;               // current program counter (globals.c, int32_t)
 
 static SimBridgeCallbacks gCB;
 
@@ -133,11 +136,11 @@ void simSetMenuTrace(void)              {}
 void simSetMenuActive(void)             {}
 void simSetMenuTask19(void)             {}
 void simRestoreMenuTask19(void)         {}
-// Return false so run.c writes the instruction line (PC/Code/mnemonic) to the
-// execution log itself. (The original returned true only because it had already
-// written the source-listing line; we don't have the listing in the core, so we
-// let the core's built-in instruction line be logged.)
-bool simLineToLog(void)                 { return false; }
+// Pretty-print the .L68 source line for the current instruction (at PC-2, the
+// instruction address at the trace/log point) into the execution log, exactly
+// like the Windows version. Returns true if a source line was written; false
+// makes run.c fall back to "PC=.. Code=.. mnemonic".
+bool simLineToLog(void)                 { return simlog_emit_source((uint32_t)(PC - 2)) ? true : false; }
 void simSaveSettings(void)              {}
 void simSetExceptionsEnabled(bool e)    { (void)e; }
 void simProcessMessages(void)           {}

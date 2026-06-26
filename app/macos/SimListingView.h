@@ -52,6 +52,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Address of the currently-selected line (for Run-To-Cursor), or 0.
 - (uint32_t)selectedAddress;
 
+// The .L68 source line for the instruction at addr (for the execution log).
+- (NSString *)instructionLineForAddress:(uint32_t)addr;
+
 @end
 
 NS_ASSUME_NONNULL_END

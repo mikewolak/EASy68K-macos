@@ -21,6 +21,7 @@
 #import "SimListingView.h"
 #import "SimStackView.h"
 #import "SimLogController.h"
+#import "SimLogBridge.h"
 #import "E68Theme.h"
 #import "SimGfxBridge.h"
 #import <stdlib.h>
@@ -198,6 +199,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     self.listingView = [[SimListingView alloc] initWithFrame:content.bounds];
     self.listingView.listingDelegate = (id)self;
     [vsplit addSubview:self.listingView];
+    simlog_set_listing((__bridge void *)self.listingView);   // pretty-print log
 
     // Bottom: memory hex dump
     NSScrollView *memScroll = [[NSScrollView alloc] initWithFrame:content.bounds];

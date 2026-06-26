@@ -208,6 +208,15 @@ static BOOL lineIsInstruction(NSString *line) {
     return bps;
 }
 
+// The .L68 source line for the instruction at `addr` (for the execution log's
+// pretty-printing), trimmed of trailing whitespace, or nil.
+- (NSString *)instructionLineForAddress:(uint32_t)addr {
+    NSInteger row = [self rowForAddress:addr instructionOnly:YES];
+    if (row < 0) return nil;
+    NSCharacterSet *ws = [NSCharacterSet whitespaceCharacterSet];
+    return [_lines[row] stringByTrimmingCharactersInSet:ws];
+}
+
 - (uint32_t)firstAddress {
     for (NSUInteger i = 0; i < _addr.count; i++)
         if ([_instrRows containsIndex:i]) return (uint32_t)_addr[i].longValue;
