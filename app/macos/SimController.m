@@ -26,10 +26,16 @@
 #import <string.h>
 
 // Toolbar item ids.
-static NSToolbarItemIdentifier const kRun   = @"sim.run";
-static NSToolbarItemIdentifier const kStep  = @"sim.step";
-static NSToolbarItemIdentifier const kStop  = @"sim.stop";
-static NSToolbarItemIdentifier const kReset = @"sim.reset";
+static NSToolbarItemIdentifier const kOpen      = @"sim.open";
+static NSToolbarItemIdentifier const kRun       = @"sim.run";
+static NSToolbarItemIdentifier const kRunCursor = @"sim.runcursor";
+static NSToolbarItemIdentifier const kAutoTrace = @"sim.autotrace";
+static NSToolbarItemIdentifier const kStep      = @"sim.step";
+static NSToolbarItemIdentifier const kTrace     = @"sim.trace";
+static NSToolbarItemIdentifier const kPause     = @"sim.pause";
+static NSToolbarItemIdentifier const kReset     = @"sim.reset";
+static NSToolbarItemIdentifier const kReload    = @"sim.reload";
+static NSToolbarItemIdentifier const kStack     = @"sim.stack";
 
 @interface SimController () <NSToolbarDelegate, NSTextFieldDelegate>
 @property (nonatomic, strong) NSTextView *registersView;
@@ -38,6 +44,7 @@ static NSToolbarItemIdentifier const kReset = @"sim.reset";
 @property (nonatomic, strong) NSWindow *ioWindow;            // separate I/O window
 @property (nonatomic, strong) NSWindow *stackWindow;        // 68000 Stack window
 @property (nonatomic, strong) SimStackView *stackView;
+@property (nonatomic, strong) NSTimer *autoTraceTimer;     // AutoTrace animation
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
 @property (nonatomic, strong) NSTextField *statusField;
@@ -308,17 +315,29 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     self.window.toolbar = tb;
 }
 - (NSArray *)toolbarDefaultItemIdentifiers:(NSToolbar *)t {
-    return @[kRun, kStep, kStop, NSToolbarFlexibleSpaceItemIdentifier, kReset];
+    return @[kOpen, NSToolbarSpaceItemIdentifier,
+             kRun, kRunCursor, kAutoTrace, kStep, kTrace, kPause,
+             NSToolbarFlexibleSpaceItemIdentifier,
+             kStack, kReload, kReset];
 }
-- (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar *)t { return [self toolbarDefaultItemIdentifiers:t]; }
+- (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar *)t {
+    return [[self toolbarDefaultItemIdentifiers:t] arrayByAddingObjectsFromArray:
+            @[NSToolbarSpaceItemIdentifier, NSToolbarFlexibleSpaceItemIdentifier]];
+}
 - (NSToolbarItem *)toolbar:(NSToolbar *)t itemForItemIdentifier:(NSToolbarItemIdentifier)i willBeInsertedIntoToolbar:(BOOL)f {
     NSToolbarItem *it = [[NSToolbarItem alloc] initWithItemIdentifier:i];
     it.bordered = YES; it.target = self;
     NSString *sym, *label; SEL a;
-    if ([i isEqual:kRun])       { sym=@"play.fill"; label=@"Run";   a=@selector(run:); }
-    else if ([i isEqual:kStep]) { sym=@"arrow.turn.down.right"; label=@"Step"; a=@selector(step:); }
-    else if ([i isEqual:kStop]) { sym=@"stop.fill"; label=@"Stop";  a=@selector(stop:); }
-    else if ([i isEqual:kReset]){ sym=@"arrow.counterclockwise"; label=@"Reset"; a=@selector(resetSim:); }
+    if ([i isEqual:kOpen])           { sym=@"folder"; label=@"Open"; a=@selector(openProgram:); }
+    else if ([i isEqual:kRun])       { sym=@"play.fill"; label=@"Run";   a=@selector(run:); }
+    else if ([i isEqual:kRunCursor]) { sym=@"forward.end.fill"; label=@"To Cursor"; a=@selector(runToCursor:); }
+    else if ([i isEqual:kAutoTrace]) { sym=@"goforward"; label=@"AutoTrace"; a=@selector(autoTrace:); }
+    else if ([i isEqual:kStep])      { sym=@"arrow.right.to.line"; label=@"Step Over"; a=@selector(step:); }
+    else if ([i isEqual:kTrace])     { sym=@"arrow.turn.down.right"; label=@"Trace"; a=@selector(traceInto:); }
+    else if ([i isEqual:kPause])     { sym=@"pause.fill"; label=@"Pause";  a=@selector(pause:); }
+    else if ([i isEqual:kStack])     { sym=@"square.stack.3d.up"; label=@"Stack"; a=@selector(showStackWindow:); }
+    else if ([i isEqual:kReload])    { sym=@"arrow.clockwise"; label=@"Reload"; a=@selector(reload:); }
+    else if ([i isEqual:kReset])     { sym=@"arrow.counterclockwise"; label=@"Reset"; a=@selector(resetSim:); }
     else return nil;
     it.label = label; it.image = [NSImage imageWithSystemSymbolName:sym accessibilityDescription:label];
     it.action = a;
@@ -366,26 +385,38 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     return self.programLoaded;
 }
 
-- (void)run:(id)sender {
+// Unified execution engine. runprog() stops itself when `trace` is set (or at
+// stepToAddr for step-over), so Run / Run-To-Cursor / Step / Trace all share
+// this one loop and differ only by the trace/sstep flags + the stop set.
+//   tr=NO,ss=NO            -> Run (free running, stops on breakpoint/halt)
+//   tr=YES,ss=NO           -> Trace (step into, one instruction)
+//   tr=YES,ss=YES          -> Step (over: runs through BSR/JSR subroutines)
+//   stopAt>=0              -> extra one-shot stop address (Run To Cursor)
+- (void)startTrace:(BOOL)tr sstep:(BOOL)ss stopAt:(int64_t)stopAt verb:(NSString *)verb {
     if (!self.programLoaded || self.running) return;
     self.running = YES;
-    self.statusField.stringValue = @"Running…";
-    // Surface the I/O window and give its canvas keyboard focus so TRAP #15
-    // task 19 (getKeyState) sees live key presses while the program runs.
-    [self.ioWindow makeKeyAndOrderFront:nil];
-    [self.ioWindow makeFirstResponder:self.gfxView];
-    // Snapshot the breakpoint addresses for a lock-free check in the run loop.
+    BOOL freeRun = (!tr);
+    if (freeRun) {
+        self.statusField.stringValue = @"Running…";
+        [self.ioWindow makeKeyAndOrderFront:nil];
+        [self.ioWindow makeFirstResponder:self.gfxView];
+    }
     NSArray<NSNumber *> *bpArr = [self.listingView breakpointAddresses];
     NSUInteger nbp = bpArr.count;
-    uint32_t *bps = (uint32_t *)malloc(sizeof(uint32_t) * (nbp ? nbp : 1));
+    BOOL hasStop = (stopAt >= 0);
+    NSUInteger n = nbp + (hasStop ? 1 : 0);
+    uint32_t *bps = (uint32_t *)malloc(sizeof(uint32_t) * (n ? n : 1));
     for (NSUInteger i = 0; i < nbp; i++) bps[i] = bpArr[i].unsignedIntValue;
-    trace = false; sstep = false; halt = false; stopInstruction = false; runMode = true;
+    if (hasStop) bps[nbp] = (uint32_t)stopAt;
+    trace = tr; sstep = ss; halt = false; stopInstruction = false;
+    if (ss) stepToAddr = 0;
+    runMode = true;
     dispatch_async(self.simQueue, ^{
         while (runMode && !halt) {
             runprog();
-            if (nbp) {
+            if (n) {
                 uint32_t pc = (uint32_t)PC;
-                for (NSUInteger i = 0; i < nbp; i++)
+                for (NSUInteger i = 0; i < n; i++)
                     if (bps[i] == pc) { runMode = false; break; }
             }
         }
@@ -394,30 +425,61 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
             self.running = NO;
             [self refreshState];
             BOOL atBP = [self.listingView hasBreakpointAtAddress:(uint32_t)PC];
+            NSString *v = atBP ? @"Breakpoint" : (verb ?: @"Halted");
             self.statusField.stringValue = [NSString stringWithFormat:
-                @"%@ — PC=%08X  cycles=%llu", atBP ? @"Breakpoint" : @"Halted",
-                (unsigned)PC, (unsigned long long)cycles];
+                @"%@ — PC=%08X  cycles=%llu", v, (unsigned)PC, (unsigned long long)cycles];
         });
     });
 }
 
-- (void)step:(id)sender {
-    if (!self.programLoaded || self.running) return;
-    trace = true; sstep = false; halt = false; runMode = true;
-    dispatch_async(self.simQueue, ^{
-        runprog();
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self refreshState];
-            self.statusField.stringValue = [NSString stringWithFormat:
-                @"Stepped — PC=%08X  cycles=%llu", (unsigned)PC, (unsigned long long)cycles];
-        });
-    });
+- (void)run:(id)sender          { [self stopAutoTrace]; [self startTrace:NO  sstep:NO  stopAt:-1 verb:@"Halted"]; }
+- (void)step:(id)sender         { [self stopAutoTrace]; [self startTrace:YES sstep:YES stopAt:-1 verb:@"Stepped"]; }  // Step Over
+- (void)traceInto:(id)sender    { [self stopAutoTrace]; [self startTrace:YES sstep:NO  stopAt:-1 verb:@"Traced"]; }    // Trace Into
+- (void)runToCursor:(id)sender {
+    uint32_t target = [self.listingView selectedAddress];
+    if (!target) { self.statusField.stringValue = @"Run To Cursor: select an instruction line first"; return; }
+    [self stopAutoTrace];
+    [self startTrace:NO sstep:NO stopAt:(int64_t)target verb:@"At cursor"];
 }
+
+// AutoTrace: animate single-stepping on a timer (the original's AutoTraceTimer).
+- (void)autoTrace:(id)sender {
+    if (self.autoTraceTimer) { [self stopAutoTrace]; return; }   // toggle
+    self.autoTraceTimer = [NSTimer scheduledTimerWithTimeInterval:0.06 repeats:YES block:^(NSTimer *t) {
+        if (self.running || !self.programLoaded || halt) return;
+        [self startTrace:YES sstep:NO stopAt:-1 verb:@"AutoTrace"];
+    }];
+    self.statusField.stringValue = @"AutoTrace…";
+}
+- (void)stopAutoTrace {
+    if (self.autoTraceTimer) { [self.autoTraceTimer invalidate]; self.autoTraceTimer = nil; }
+}
+
+- (void)pause:(id)sender { [self stop:sender]; }
 
 - (void)stop:(id)sender {
+    [self stopAutoTrace];
     runMode = false; halt = true;
     // Release a pending input wait so the sim thread can unwind.
     dispatch_semaphore_signal(self.inputSem);
+}
+
+// Open a .S68 program from disk into the simulator.
+- (void)openProgram:(id)sender {
+    NSOpenPanel *p = [NSOpenPanel openPanel];
+    p.allowedFileTypes = @[@"S68", @"s68", @"h68", @"x68"];
+    p.allowsMultipleSelection = NO;
+    if ([p runModal] == NSModalResponseOK && p.URLs.firstObject) {
+        NSURL *u = p.URLs.firstObject;
+        [self stop:nil];
+        [self loadProgram:u.path title:u.lastPathComponent];
+        [self.ioWindow orderFront:nil];
+    }
+}
+
+// Reload the current program from disk (the original's Reload).
+- (void)reload:(id)sender {
+    if (self.srecPath) { [self stop:nil]; [self loadProgram:self.srecPath title:self.programName]; }
 }
 
 - (void)resetSim:(id)sender {
@@ -439,8 +501,11 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 
 - (int)readLineInto:(char *)buf size:(int)size outLen:(int *)outLen {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // The input field lives in the separate I/O window — surface it and make
+        // it first responder THERE (not in the main listing window).
+        [self.ioWindow makeKeyAndOrderFront:nil];
         self.inputField.enabled = YES;
-        [self.window makeFirstResponder:self.inputField];
+        [self.ioWindow makeFirstResponder:self.inputField];
         self.statusField.stringValue = @"Waiting for input…";
     });
     dispatch_semaphore_wait(self.inputSem, DISPATCH_TIME_FOREVER);
@@ -460,6 +525,8 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self appendConsole:line newline:YES];   // echo
     self.inputField.stringValue = @"";
     self.inputField.enabled = NO;
+    // Return keyboard focus to the canvas so getKeyState (task 19) keeps working.
+    [self.ioWindow makeFirstResponder:self.gfxView];
     if (self.running) self.statusField.stringValue = @"Running…";
     dispatch_semaphore_signal(self.inputSem);
 }

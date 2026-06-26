@@ -36,7 +36,7 @@ extern int  runprog(void);      // execute one instruction + housekeeping
 
 // CPU + simulator state (globals.c).
 extern char     *memory;
-extern int32_t   D[8], A[9], PC, OLD_PC;
+extern int32_t   D[8], A[9], PC, OLD_PC, stepToAddr;
 extern short     SR;
 extern uint64_t  cycles;
 extern bool      halt, runMode, trace, sstep, stopInstruction;
