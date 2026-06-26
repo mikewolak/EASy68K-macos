@@ -5,6 +5,7 @@
 #import "AppDelegate.h"
 #import "SimRemoteServer.h"
 #import "SimController.h"
+#import "AboutWindowController.h"
 
 @implementation AppDelegate
 
@@ -29,6 +30,8 @@
     [NSApp activateIgnoringOtherApps:YES];
 }
 
+- (void)showAbout:(id)sender { [AboutWindowController showAbout]; }
+
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender { return NO; }
@@ -48,7 +51,9 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     [mainMenu addItem:appItem];
     NSMenu *appMenu = [[NSMenu alloc] init];
     appItem.submenu = appMenu;
-    [appMenu addItem:Item(@"About EASy68K", @selector(orderFrontStandardAboutPanel:), @"")];
+    NSMenuItem *about = Item(@"About EASy68K", @selector(showAbout:), @"");
+    about.target = self;
+    [appMenu addItem:about];
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItem:Item(@"Hide EASy68K", @selector(hide:), @"h")];
     NSMenuItem *hideOthers = Item(@"Hide Others", @selector(hideOtherApplications:), @"h");

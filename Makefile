@@ -110,6 +110,8 @@ $(APP): $(MACOS_M) $(MACOS_C) app/macos/Info.plist $(LIBASM) $(LIBCOMMON) $(SIMC
 	@mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp app/macos/Info.plist $(APP)/Contents/Info.plist
 	cp $(BINDIR)/sim68k $(APP)/Contents/MacOS/sim68k
+	cp app/macos/AppIcon.icns $(APP)/Contents/Resources/AppIcon.icns
+	cp app/macos/logo.png $(APP)/Contents/Resources/logo.png
 	$(CC) -fobjc-arc -fmodules $(CPPFLAGS) -framework Cocoa \
 	    $(MACOS_M) $(MACOS_C) $(SIMCORE_COMBINED) $(LIBASM) $(LIBCOMMON) -o $(APP_EXE)
 	@echo "built $(APP)"
