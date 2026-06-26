@@ -1,0 +1,17 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.dSYM/
+bin/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Large reference material (originals kept locally, not committed)
+reference/upstream/*.zip
+reference/unpacked/
+
+# Editor
+*.swp
