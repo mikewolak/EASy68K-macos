@@ -17,124 +17,45 @@ related operations:
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 #include "extern.h"         // contains global "extern" declarations
-#include "simIOu.h"
-#include "SIM68Ku.h"
-#include "hardwareu.h"
-#include "logU.h"
+#include "simhost.h"
 
 
-extern uchar keyDownCode;       // defined in simIOu, used by Trap #15,19
+extern uchar keyDownCode;       // used by Trap #15,19
 extern uchar keyUpCode;         // "
-extern bool disableKeyCommands;  // defined in SIM68Ku
+extern bool disableKeyCommands;
 
-// global variables for printing
-TPrinter *Prntr;
-bool printing = false;
-int pageRowHeight;
-int pageColWidth;
-int pageTop;
-int pageBot;
-int pageLeft;
-int pageRight;
-int pageX;
-int pageY;
-
-
-void __fastcall formFeed()
+// Printer output (TRAP #15 task 10). The original rendered to a Windows
+// TPrinter canvas with its own page layout; that presentation now belongs to
+// the host, which receives the raw characters and form feeds.
+void formFeed()
 {
-  if (!printing) {
-    initPrint();
-    Prntr->BeginDoc();
-  }
-  Prntr->EndDoc();
-  printing = false;
-  pageY = pageTop;
+  simPrintFormFeed();
 }
 
-void __fastcall lineFeed()
+void printChar(char ch)
 {
-  pageY += pageRowHeight;
-  if (pageY > pageBot) {
-    formFeed();
-  }
+  simPrintChar(ch);
 }
 
-void __fastcall nextX()
+// Convert an unsigned 32-bit value to a string in the given base (2..36),
+// using uppercase digits. C99 replacement for Borland ultoa()+UpperCase().
+static char *ultoaBase(uint32_t value, char *buf, int base)
 {
-  pageX += pageColWidth;
-  if (pageX > pageRight) {
-    pageX = pageX - pageRight + pageLeft;
-    lineFeed();
-  }
-}
-
-void __fastcall initPrint()
-{
-  Prntr = Printer();
-  printing = false;
-  Prntr->Canvas->Font->Assign(Form1->FontDialogPrinter->Font);
-  pageRowHeight = Prntr->Canvas->TextHeight("Xp");
-  pageColWidth  = Prntr->Canvas->TextWidth("W");
-  pageTop = Prntr->PageHeight / 11;
-  pageBot = Prntr->PageHeight - pageTop;
-  pageLeft = Prntr->PageWidth / 8;
-  pageRight = Prntr->PageWidth - pageLeft;
-  pageX = pageLeft;
-  pageY = pageTop;
-}
-
-//---------------------------------------------------------------------------
-//  printChar
-//  Print character at pageX, pageY
-//  Handle control characters
-//  \b	0x08	BS	Backspace
-//  \f	0x0C	FF	Formfeed
-//  \n	0x0A	LF	Newline (linefeed)
-//  \r	0x0D	CR	Carriage return
-//  \t	0x09	HT	Tab (horizontal)
-//  \v	0x0B	VT	Vertical tab
-void __fastcall printChar(char ch)
-{
-  if (!printing) {
-    initPrint();
-    Prntr->BeginDoc();
-    printing = true;
-  }
-  switch (ch) {
-    case '\b':                  // if Backspace
-      pageX -= pageColWidth;
-      if (pageX < pageLeft)
-        pageX = pageLeft;
-      break;
-    case '\f':                  // if Formfeed
-      formFeed();
-      break;
-    case '\n':                  // if LF
-      lineFeed();
-      break;
-    case '\r':                  // if CR
-      pageX = pageLeft;
-      break;
-    case '\t':                  // if Tab
-      pageX += 4 * pageColWidth;
-      nextX();
-      break;
-    case '\v':                  // if Vertical tab
-      pageY += 4 * pageRowHeight;
-      if (pageY > pageBot) {
-        int tempY = pageY - pageBot + pageTop;
-        formFeed();
-        pageY = tempY;
-      }
-      break;
-    default:
-      if (ch >= ' ') {          // if not control char
-        Prntr->Canvas->TextOut(pageX,pageY,AnsiString(ch));
-        nextX();
-      }
-  } // end switch
+  static const char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  char tmp[40];
+  int i = 0;
+  if (base < 2 || base > 36) { buf[0] = '\0'; return buf; }
+  if (value == 0) tmp[i++] = '0';
+  while (value) { tmp[i++] = digits[value % (uint32_t)base]; value /= (uint32_t)base; }
+  int j = 0;
+  while (i > 0) buf[j++] = tmp[--i];   // reverse
+  buf[j] = '\0';
+  return buf;
 }
 
 //-----------------------------------------------------
@@ -750,7 +671,7 @@ int TRAP()
         simIO->textIn(inStr, &D[1], NULL); // read string into inStr, length in D1
         break;
       case 3:  // display number in D1.L
-        itoa(D[1], buf, 10);            // convert D1.L to string, put in buf
+        sprintf(buf, "%d", D[1]);            // convert D1.L to string, put in buf
         simIO->textOut(buf);            // display number without CRLF
         break;
       case 4:  // read number to D1.L   // inputBuf & inputSize must be global
@@ -770,20 +691,22 @@ int TRAP()
           D[1] &= 0xFFFFFF00;
         }
         break;
-      case 8:  // Return time in hundredths of a second since midnight in D1.L
-        struct  time t;
-        gettime(&t);
-        D[1] = t.ti_hour * 60 * 60 * 100 +
-               t.ti_min  * 60 * 100 +
-               t.ti_sec  * 100 +
-               t.ti_hund;
+      case 8: {  // Return time in hundredths of a second since midnight in D1.L
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        struct tm *lt = localtime(&tv.tv_sec);
+        D[1] = lt->tm_hour * 60 * 60 * 100 +
+               lt->tm_min  * 60 * 100 +
+               lt->tm_sec  * 100 +
+               (int)(tv.tv_usec / 10000);
         break;
+      }
       case 9:  // terminate the program
-        Form1->AutoTraceTimer->Enabled = false;
+        simSetAutoTrace(false);
         trace = false;
         halt = true;
-        Hardware->disable();
-        Log->stopLogWithAnnounce();
+        simHardwareDisable();
+        simStopLog();
         break;
       case 10:                  // print text at (A1)
           inStr = &memory[A[1] & ADDRMASK];        // address of string
@@ -821,10 +744,8 @@ int TRAP()
         break;
       case 15:                    // Display D1 converted to radix in D2.B
         if ((char)D[2]>=2 && (char)D[2]<=36) {   // if 2 <= D2.B <= 36
-          ultoa(D[1], buf, (char)D[2]);  // convert D1.L to string, put in buf
-          AnsiString hex = buf;
-          hex = hex.UpperCase();         // convert to upper case
-          simIO->textOut(hex.c_str());   // display number without CRLF
+          ultoaBase((uint32_t)D[1], buf, (char)D[2]);  // D1.L -> uppercase string
+          simIO->textOut(buf);           // display number without CRLF
         }
         break;
       case 16:                    // turn input prompt on/off
@@ -846,7 +767,7 @@ int TRAP()
         if (code == BUS_ERROR)        // if bus error caused by memory map
           return code;
         simIO->textOut(inStr);    // display string without CRLF
-        itoa(D[1], buf, 10);      // convert D1.L to string, put in buf
+        sprintf(buf, "%d", D[1]);      // convert D1.L to string, put in buf
         simIO->textOut(buf);      // display number without CRLF
         break;
       // Displays the NULL terminated string at (A1) without CRLF
@@ -877,15 +798,15 @@ int TRAP()
       case 23:                          // delay D1/100 second
         {uint n = (unsigned)D[1];
         while(n-- > 0 && runMode) {
-          Application->ProcessMessages();
-          Sleep(10);                    // delay 1/100 second
+          simProcessMessages();
+          usleep(10000);                // delay 1/100 second
         }}
         break;
       case 24:
         if (D[1] == 0) {                // disable simulator key actions
-          Form1->restoreMenuTask19();
+          simRestoreMenuTask19();
         } else if (D[1] == 1) {
-          Form1->setMenuTask19();
+          simSetMenuTask19();
         }
         break;
       case 25:                          // scroll text window at Row, Col, Height, Width, Up or Down
@@ -905,30 +826,30 @@ int TRAP()
         //AnsiString str = "0x";
         switch ((char)D[1]) {  // which sub task ?
           case 00:              // display hardware window
-            Hardware->Show();
+            simHardwareShow();
             break;
           case 01:              // return address of 7-segment display in D1.L
-            D[1] = StrToInt("0x" + Hardware->seg7addr->EditText);
+            D[1] = simHardwareSeg7Addr();
             break;
           case 02:              // return address of LEDs in D1.L
-            D[1] = StrToInt("0x" + Hardware->LEDaddr->EditText);
+            D[1] = simHardwareLEDAddr();
             break;
           case 03:              // return address of toggle switches in D1.L
-            D[1] = StrToInt("0x" + Hardware->switchAddr->EditText);
+            D[1] = simHardwareSwitchAddr();
             break;
           case 04:              // return sim68k version number in D1.L
             D[1] = VERSION;
             break;
           case 05:              // enable exception processing
             exceptions = true;
-            Form1->ExceptionsEnabled->Checked = true;
-            Form1->SaveSettings();
+            simSetExceptionsEnabled(true);
+            simSaveSettings();
             break;
           case 06:              // set auto IRQ
-            Hardware->setAutoIRQ((uchar)D[2], D[3]);
+            simHardwareSetAutoIRQ((uchar)D[2], D[3]);
             break;
           case 07:              // return address of push button switches in D1.L
-            D[1] = StrToInt("0x" + Hardware->pbAddr->EditText);
+            D[1] = simHardwarePbAddr();
             break;
         }
         break;
@@ -943,7 +864,7 @@ int TRAP()
           simIO->setWindowSize((short)(D[1]>>16),(short)D[1]);
         } else {                // get size
           ushort width, height;
-          simIO->getWindowSize(width, height);
+          simIO->getWindowSize(&width, &height);
           D[1] = (((uint)width)<<16) + height;
         }
         break;
@@ -1233,7 +1154,7 @@ int TRAP()
         simIO->setPenWidth(D[1]);
         break;
       case 94:                  // if repaint
-        simIO->FormPaint((TObject *)simIO);
+        simIO->FormPaint((void *)simIO);
         break;
       case 95:                  // Draw NULL terminated string at (A1) to X,Y in D1.W & D2.W
         inStr = &memory[A[1] & ADDRMASK];          // address of string
@@ -1309,11 +1230,11 @@ int     LINE1111()
   if(inst == 0xFFFF && temp == 0xFFFF && simhalt_on)  // if SIMHALT command
   {
     PC += 2;    // position at next instruction
-    Form1->AutoTraceTimer->Enabled = false;
+    simSetAutoTrace(false);
     trace = false;
     halt = true;
-    Hardware->disable();
-    Log->stopLogWithAnnounce();
+    simHardwareDisable();
+    simStopLog();
     return SUCCESS;
   }
   return LINE_1111;

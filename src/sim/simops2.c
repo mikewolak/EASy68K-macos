@@ -12,12 +12,12 @@ This file contains various routines for simulator operation
 ***************************************************************************/
 
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include "extern.h"
-#include "SIM68Ku.h"
-#include "hardwareu.h"
-#include "simIOu.h"
+#include "simhost.h"
 
-extern int ROMStart, ROMEnd, ReadOnlyStart, ReadOnlyEnd;
+extern int ROMStart, ROMEnd, ReadStart, ReadEnd;
 extern int ProtectedStart, ProtectedEnd, InvalidStart, InvalidEnd;
 extern bool ROMMap, ReadMap, ProtectedMap, InvalidMap;
 
@@ -206,16 +206,17 @@ int loadSrec(char *name)        // load memory with contents of s_record file
   char s_byte[4], s_type, nambuf[40];
   char *bufptr, *bufend;
   uchar checksum;
-  AnsiString str, str2;
-  const AnsiString EASy68K_HEADER = "S0 = 68KPROG   20CREATED BY EASY68K";
+  char str[256];                 // S0 description, built up byte by byte
+  int  strLen;
+  const char EASy68K_HEADER[] = "S0 = 68KPROG   20CREATED BY EASY68K";
   bool EASy68Kv2_0_SRecord = false;
   bool sRecError = false;
   bool skipRecord;              // used to skip loading record data
 
-  try {
+  {
     fp = fopen(name, "rt");
     if (fp == NULL) {             // if file cannot be opened, print message
-      Form1->Message->Lines->Add(str.sprintf("error: cannot open file %s", name));
+      snprintf(buffer, sizeof(buffer), "error: cannot open file %s", name), simMessage(buffer);
       return FAILURE;
     }
 
@@ -240,44 +241,50 @@ int loadSrec(char *name)        // load memory with contents of s_record file
             sRecError = true;
           else
             bufptr += 4;
-          str = "S0 = ";
+          strcpy(str, "S0 = ");
+          strLen = 5;
           while (sscanf(bufptr,"%2x",&s_byte)) {
             bufptr += 2;
             checksum += s_byte[0];
             if ((bufptr + 2) >= bufend) break;  // if checksum byte
               if (s_byte[0] >= ' ' && s_byte[0] <= '~') // if displayable
-                str = str + s_byte[0];          // add character to str
+                str[strLen++] = s_byte[0];      // add character to str
               else
-                str = str + '.';                // use '.' for non displayable
+                str[strLen++] = '.';            // use '.' for non displayable
           }
+          str[strLen] = '\0';
           checksum = ~checksum &0xFF;
           if(checksum)                          // if checksum not 0
-            Form1->Message->Lines->Add(str2.sprintf("Checksum error on line %d...",line));
-          Form1->Message->Lines->Add(str);
+          {
+            snprintf(buffer, sizeof(buffer), "Checksum error on line %d...",line);
+            simMessage(buffer);
+          }
+          simMessage(str);
           if(EASy68Kv2_0_SRecord)       // if this is an EASy68K 2.0 SRecord file
           {
-            // Set Memory Map in Hardware form
-            // Does not erase existing map if no map specified
-            if(str.SubString(6,9) == "      ROM") {        // if ROM range included
-              Hardware->ROMChk->Checked = true;
-              Hardware->ROMStartEdit->EditText = str.SubString(16,6);
-              Hardware->ROMEndEdit->EditText = str.SubString(23,6);
-            } else if(str.SubString(6,9) == "     READ") { // if Read/Only range included
-              Hardware->ReadChk->Checked = true;
-              Hardware->ReadStartEdit->EditText = str.SubString(16,6);
-              Hardware->ReadEndEdit->EditText = str.SubString(23,6);
-            } else if(str.SubString(6,9) == "PROTECTED") { // if Protected range included
-              Hardware->ProtectedChk->Checked = true;
-              Hardware->ProtectedStartEdit->EditText = str.SubString(16,6);
-              Hardware->ProtectedEndEdit->EditText = str.SubString(23,6);
-            } else if(str.SubString(6,9) == "  INVALID") { // if Invalid range included
-              Hardware->InvalidChk->Checked = true;
-              Hardware->InvalidStartEdit->EditText = str.SubString(16,6);
-              Hardware->InvalidEndEdit->EditText = str.SubString(23,6);
+            // Set memory map from the S0 description (1-indexed Borland
+            // SubString(6,9) == str[5..13]; SubString(16,6)/SubString(23,6)
+            // are the 6-hex-digit start/end addresses). Sets core map state
+            // and notifies the host's hardware display.
+            // Does not erase existing map if no map specified.
+            int mapStart = (int)strtol((char[]){str[15],str[16],str[17],str[18],str[19],str[20],'\0'}, NULL, 16);
+            int mapEnd   = (int)strtol((char[]){str[22],str[23],str[24],str[25],str[26],str[27],'\0'}, NULL, 16);
+            if(strLen >= 28 && strncmp(&str[5], "      ROM", 9) == 0) {        // ROM range
+              ROMMap = true; ROMStart = mapStart; ROMEnd = mapEnd;
+              simHardwareSetMap(0, mapStart, mapEnd);
+            } else if(strLen >= 28 && strncmp(&str[5], "     READ", 9) == 0) { // Read/Only range
+              ReadMap = true; ReadStart = mapStart; ReadEnd = mapEnd;
+              simHardwareSetMap(1, mapStart, mapEnd);
+            } else if(strLen >= 28 && strncmp(&str[5], "PROTECTED", 9) == 0) { // Protected range
+              ProtectedMap = true; ProtectedStart = mapStart; ProtectedEnd = mapEnd;
+              simHardwareSetMap(2, mapStart, mapEnd);
+            } else if(strLen >= 28 && strncmp(&str[5], "  INVALID", 9) == 0) { // Invalid range
+              InvalidMap = true; InvalidStart = mapStart; InvalidEnd = mapEnd;
+              simHardwareSetMap(3, mapStart, mapEnd);
             }
-          }else if(str == EASy68K_HEADER)
+          }else if(strcmp(str, EASy68K_HEADER) == 0)
             EASy68Kv2_0_SRecord = true;
-          str = "";
+          str[0] = '\0';
           break;
         // S1 2-byte address
         case '1' :
@@ -347,7 +354,7 @@ int loadSrec(char *name)        // load memory with contents of s_record file
           checksum += s_byte[0];
           if ((bufptr + 2) >= bufend) break;    // if checksum byte
           if ((loc < 0) || (loc > (MEMSIZE - 1))) {
-            Form1->Message->Lines->Add(str.sprintf("Invalid Address on line %d...",line));
+            snprintf(buffer, sizeof(buffer), "Invalid Address on line %d...",line), simMessage(buffer);
             sRecError = true;
             break;
           }
@@ -356,25 +363,21 @@ int loadSrec(char *name)        // load memory with contents of s_record file
         }
         checksum = ~checksum &0xFF;
         if(checksum)                    // if checksum not 0
-          Form1->Message->Lines->Add(str.sprintf("Checksum error on line %d...",line));
+          snprintf(buffer, sizeof(buffer), "Checksum error on line %d...",line), simMessage(buffer);
         if (sRecError) break;
       }
     } // endw read until end of file
     if (sRecError)                     // if error reading file, print message
     {
-      Form1->Message->Lines->Add(str.sprintf("Invalid data on line %d of .S68 file...",line));
-      Form1->Message->Lines->Add(str.sprintf ("%d: %s", line, lbuf));    // *ck 12-3-2005
-      Form1->Message->Lines->Add(str.sprintf("Remainder of load stopped..."));
+      snprintf(buffer, sizeof(buffer), "Invalid data on line %d of .S68 file...",line), simMessage(buffer);
+      snprintf(buffer, sizeof(buffer), "%d: %s", line, lbuf), simMessage(buffer);    // *ck 12-3-2005
+      snprintf(buffer, sizeof(buffer), "Remainder of load stopped..."), simMessage(buffer);
     }else{
-      Form1->Message->Lines->Add(str.sprintf(".S68 file read successful"));
+      snprintf(buffer, sizeof(buffer), ".S68 file read successful"), simMessage(buffer);
     }
     fclose(fp);			// close file specified
     return SUCCESS;
     }
-  catch( ... ) {
-    Form1->Message->Lines->Add(str.sprintf("Unexpected Error reading .S68 file"));
-    return FAILURE;
-  }
 }
 
 

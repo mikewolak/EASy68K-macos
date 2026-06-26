@@ -17,16 +17,17 @@ routines are :
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "extern.h"        		// global declarations
 #include "opcodes.h"       		// opcode masks for decoding
-#include "SIM68Ku.h"
-#include "simIOu.h"
-#include "hardwareu.h"
-#include "logU.h"
+#include "simhost.h"
+
+
+
 
 
 extern char buffer[256];  //used to form messages for display in window
-extern AnsiString str;
+
 bool trace_bit = false;
 
 /**************************** int decode_size() ****************************
@@ -644,31 +645,31 @@ int runprog()
   exec_inst();          // execute an instruction
 
   do {
-    Application->ProcessMessages();
+    simProcessMessages();
     if(inputMode)
-      Sleep(10);        // don't hog the CPU while waiting for input
+      usleep(10000);        // don't hog the CPU while waiting for input
   } while (inputMode && runMode);
 
   if (errflg) {        // if illegal opcode in program initiate an exception
     halt = true;               // force halt
-    Form1->Message->Lines->Add("Address or Bus error during exception processing. Execution halted");
+    simMessage("Address or Bus error during exception processing. Execution halted");
   }
 
   // simple breakpoints
   for (i = 0; i < bpoints; i++) {
     if (PC == brkpt[i])
     {
-      Form1->Message->Lines->Add(str.sprintf("break point at %04x", PC));
+      snprintf(buffer, sizeof(buffer), "break point at %04x", PC), simMessage(buffer);
       trace = true;             // force trace mode
-      Form1->AutoTraceTimer->Enabled = false;
-      //Form1->SetFocus();        // bring Form1 to top
+      simSetAutoTrace(false);
+      //simSetFocus();        // bring Form1 to top
     }
   }
 
   // if run to cursor address reached
   if (PC == runToAddr) {
     trace = true;             // force trace mode
-    Form1->AutoTraceTimer->Enabled = false;
+    simSetAutoTrace(false);
     runToAddr = 0;
   }
 
@@ -676,11 +677,11 @@ int runprog()
   for(i = 0; i < exprCount; i++) {
     // Evaluate isBreak() for all expressions
     //if(true) {
-    if(bpExpressions[i].isBreak()) {
-      Form1->Message->Lines->Add(str.sprintf("break point at %04x", PC));
+    if(BPointExpr_isBreak(&bpExpressions[i])) {
+      snprintf(buffer, sizeof(buffer), "break point at %04x", PC), simMessage(buffer);
       trace = true;             // force trace mode
-      Form1->AutoTraceTimer->Enabled = false;
-      //Form1->SetFocus();        // bring Form1 to top
+      simSetAutoTrace(false);
+      //simSetFocus();        // bring Form1 to top
     }
   }
 
@@ -688,7 +689,7 @@ int runprog()
     if (PC == stepToAddr) {     // if step address reached
       trace = true;             // force trace mode
       stepToAddr = 0;           // reset for next use
-      //Form1->SetFocus();        // bring Form1 to top
+      //simSetFocus();        // bring Form1 to top
     }
   }
 
@@ -697,23 +698,23 @@ int runprog()
   if (trace || halt) {
     runMode = false;            // stop running if enabled
     if (!stopInstruction)
-      Hardware->autoIRQoff(); // turn off auto interrupt timers unless STOP instruction ck 1-11-2008
-    if (simIO->fullScreen && Form1->Monitor->MonitorNum == FullScreenMonitor) {
+      simHardwareAutoIRQoff(); // turn off auto interrupt timers unless STOP instruction ck 1-11-2008
+    if (simIO->fullScreen && true) {
       simIO->fullScreen = false;
       simIO->setupWindow();
     }
     scrshow();              // if trace is on then update the screen
 
     if (halt)
-      Form1->setMenuTrace();    // set menu and toolbar to disable debug commands
+      simSetMenuTrace();    // set menu and toolbar to disable debug commands
     else {
-      Form1->setMenuActive();   // enable debug commands
+      simSetMenuActive();   // enable debug commands
       //Hardware->enable();
     }
 
     if (trace) {
       if (!inputMode)           // if not doing user input
-        Form1->SetFocus();      //   bring Form1 to top
+        simSetFocus();      //   bring Form1 to top
     }
   }
 
@@ -753,7 +754,7 @@ int exec_inst()
   bpRead = false;
   bpWrite = false;
 
-  try {
+  {
 
     // if previous instruction caused bus or address error
     if (exec_result == ADDR_ERROR || exec_result == BUS_ERROR)
@@ -774,7 +775,7 @@ int exec_inst()
               sprintf(buffer,"PC=%08X  Code=%04X  SIMHALT", PC-2, inst);
             else
               sprintf(buffer,"PC=%08X  Code=%04X  %s", PC-2, inst, inst_arr[i].name);
-            Form1->Message->Lines->Add(buffer);
+            simMessage(buffer);
 
             if (logging)
             {
@@ -835,7 +836,7 @@ int exec_inst()
 
               // ----- if logging instruction -----
               if (ElogFlag) {
-                if(Form1->lineToLog() == false) {  // output instruction to log file
+                if(simLineToLog() == false) {  // output instruction to log file
                   fprintf(ElogFile, buffer); // if source not present output limited info
                   fprintf(ElogFile, "\n");
                 }
@@ -891,12 +892,12 @@ int exec_inst()
               case SUCCESS  : break;
               case STOP_TRAP : 	        // STOP instruction
                 //trace = true;
-                Form1->AutoTraceTimer->Enabled = false;
+                simSetAutoTrace(false);
                 halt = true;
                 if (stopInstruction == false) {
                   stopInstruction = true;
-                  Form1->Message->Lines->Add("STOP instruction. Execution halted");
-                  Form1->SetFocus();    // bring Form1 to top
+                  simMessage("STOP instruction. Execution halted");
+                  simSetFocus();    // bring Form1 to top
                   scrshow();            // update the screen
                 }
                 break;
@@ -936,66 +937,54 @@ int exec_inst()
             {
               case SUCCESS  : break;
               case BAD_INST : halt = true;	// halt the program
-                Form1->Message->Lines->Add(str.sprintf
-                    ("Illegal instruction found at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "Illegal instruction found at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case NO_PRIVILEGE : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("supervisor privilege violation at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "supervisor privilege violation at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case CHK_EXCEPTION : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("CHK exception occurred at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "CHK exception occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case STOP_TRAP : halt = true;
-                Form1->AutoTraceTimer->Enabled = false;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("STOP instruction executed at location %4x. Execution halted", OLD_PC));
-                Log->stopLogWithAnnounce();
-                Form1->SetFocus();    // bring Form1 to top
+                simSetAutoTrace(false);
+                snprintf(buffer, sizeof(buffer), "STOP instruction executed at location %4x. Execution halted", OLD_PC), simMessage(buffer);
+                simStopLog();
+                simSetFocus();    // bring Form1 to top
                 scrshow();            // update the screen
-                Hardware->disable();
+                simHardwareDisable();
                 break;
               case TRAP_TRAP : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("TRAP exception occurred at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "TRAP exception occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case TRAPV_TRAP : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("TRAPV exception occurred at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "TRAPV exception occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case DIV_BY_ZERO : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("Divide by zero occurred at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "Divide by zero occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case ADDR_ERROR : halt = true;
-                Form1->Message->Lines->Add("Execution halted");
+                simMessage("Execution halted");
                 break;
               case BUS_ERROR : halt = true;
-                Form1->Message->Lines->Add("Execution halted");
+                simMessage("Execution halted");
                 break;
               case TRACE_EXCEPTION : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("Trace exception occurred at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "Trace exception occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case LINE_1010 : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("Line 1010 Emulator exception occurred at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "Line 1010 Emulator exception occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               case LINE_1111 : halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("Line 1111 Emulator exception occurred at location %4x. Execution halted", OLD_PC));
+                snprintf(buffer, sizeof(buffer), "Line 1111 Emulator exception occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
                 break;
               default: halt = true;
-                Form1->Message->Lines->Add(str.sprintf
-                    ("Unknown execution error %4x occurred at location %4x. Execution halted", exec_result, OLD_PC));
+                snprintf(buffer, sizeof(buffer), "Unknown execution error %4x occurred at location %4x. Execution halted", exec_result, OLD_PC), simMessage(buffer);
             }
 
             if (SR & tbit)
             {
               halt = true;
-              Form1->Message->Lines->Add(str.sprintf
-                  ("TRACE exception occurred at location %4x. Execution halted", OLD_PC));
+              snprintf(buffer, sizeof(buffer), "TRACE exception occurred at location %4x. Execution halted", OLD_PC), simMessage(buffer);
             }
           }
           break;        // break out of for loop
@@ -1005,14 +994,7 @@ int exec_inst()
       } // end for
 
     } // end if
-  } catch( ... ) {
-    Form1->AutoTraceTimer->Enabled = false;
-    sprintf(buffer, "ERROR: An exception occurred in routine 'exec_inst'.\nPC=%08X  Code=%04X", PC-2, inst);
-    Application->MessageBox(buffer, "Error", MB_OK);
-    trace = true;       // stop running programs
-    sstep = false;
   }
-
   return 0;
 }
 
@@ -1038,14 +1020,13 @@ int exec_inst()
 void exceptionHandler(int clas, int32_t loc, int r_w)
 {
   int	infoWord;
-  AnsiString str;
+
 
   // if SSP on odd address OR outside memory range
   if ( (A[8] % 2) || (A[8] < 0) || ((unsigned int)A[8] > MEMSIZE) ){
-    Form1->AutoTraceTimer->Enabled = false;
-    Form1->Message->Lines->Add(str.sprintf
-          ("Error during Exception Handler: SSP odd or outside memory space "));
-    Form1->Message->Lines->Add(str.sprintf ("at location %4x", A[8]));
+    simSetAutoTrace(false);
+    snprintf(buffer, sizeof(buffer), "Error during Exception Handler: SSP odd or outside memory space "), simMessage(buffer);
+    snprintf(buffer, sizeof(buffer), "at location %4x", A[8]), simMessage(buffer);
     trace = true;       // stop running programs
     sstep = false;
     return;
@@ -1120,9 +1101,9 @@ void irqHandler()
 // Halt Simulator
 void haltSimulator()
 {
-  Form1->AutoTraceTimer->Enabled = false;
+  simSetAutoTrace(false);
   trace = false;
   halt = true;
-  Hardware->disable();
-  Log->stopLogWithAnnounce();
+  simHardwareDisable();
+  simStopLog();
 }

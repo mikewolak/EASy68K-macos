@@ -139,8 +139,13 @@ void simSetMenuTask19(void)             {}
 void simRestoreMenuTask19(void)         {}
 bool simLineToLog(void)                 { return true; }  // don't halt
 void simUpdateDisplay(void)             {}
+void simMemoryUpdate(int loc)           { (void)loc; }
 void simSaveSettings(void)              {}
 void simSetExceptionsEnabled(bool e)    { (void)e; }
+void simProcessMessages(void)           {}
+void simStopLog(void)                   {}
+void simPrintChar(char ch)              { (void)ch; }   // no printer in CLI
+void simPrintFormFeed(void)             {}
 
 /* ------------------------------------------------------------------ *
  *  Hardware-simulation window — CLI stubs.

@@ -107,6 +107,16 @@ int32_t * writeEA;
 bool hardReset;
 int irq;
 
+// Memory map (set from S0 records / the hardware window; enforced by
+// memoryMapCheck in utils.c). In the Windows build these lived in
+// hardwareu.cpp; they are core simulator state here.
+int ROMStart=0, ROMEnd=0, ReadStart=0, ReadEnd=0;
+int ProtectedStart=0, ProtectedEnd=0, InvalidStart=0, InvalidEnd=0;
+bool ROMMap=false, ReadMap=false, ProtectedMap=false, InvalidMap=false;
+
+// Memory-mapped hardware device locations (0 = not mapped).
+int seg7loc=0, LEDloc=0, switchLoc=0, pbLoc=0;
+
 // Full-screen output target (0 = primary, 1+ = secondary monitors)
 unsigned char FullScreenMonitor;
 char FullScreenDeviceName[32];

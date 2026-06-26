@@ -22,3 +22,6 @@ tests/asm/*.easytmp
 tests/asm/hello.S68
 tests/asm/structured.S68
 tests/asm/macro.S68
+tests/sim/*.S68
+tests/sim/*.L68
+tests/sim/*.easytmp

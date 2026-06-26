@@ -135,9 +135,24 @@ bool simLineToLog(void);
 // Refresh the register / cycle-count display from the current CPU state.
 void simUpdateDisplay(void);
 
+// Refresh the memory display after a write at address loc.
+void simMemoryUpdate(int loc);
+
 // Persist the "exceptions enabled" setting (TRAP task that toggles it).
 void simSaveSettings(void);
 void simSetExceptionsEnabled(bool enabled);
+
+// Let the host process pending UI events during a run (Win32 message pump
+// equivalent; keeps the GUI responsive while auto-tracing). No-op for CLI.
+void simProcessMessages(void);
+
+// Stop the execution log and announce it (the GUI's log window).
+void simStopLog(void);
+
+// Printer output (TRAP #15 task 10). simPrintChar emits one character to the
+// default printer; simPrintFormFeed ends the page/document.
+void simPrintChar(char ch);
+void simPrintFormFeed(void);
 
 /* ------------------------------------------------------------------ *
  *  Hardware-simulation window (LED / 7-seg / switches / memory map).

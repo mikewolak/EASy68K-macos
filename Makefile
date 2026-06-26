@@ -18,7 +18,8 @@
 
 CC      ?= clang
 CSTD    := -std=c99
-CFLAGS  := $(CSTD) -O2 -Wall -Wno-unused-variable -Wno-unused-but-set-variable \
+CFLAGS  := $(CSTD) -O2 -D_DARWIN_C_SOURCE \
+           -Wall -Wno-unused-variable -Wno-unused-but-set-variable \
            -Wno-unused-function -Wno-parentheses -Wno-dangling-else
 CPPFLAGS := -Isrc/common -Isrc/asm -Isrc/sim
 
@@ -32,20 +33,25 @@ ARFLAGS := rcs
 # ---- source groups ---------------------------------------------------
 COMMON_SRC := $(wildcard src/common/*.c)
 ASM_SRC    := $(wildcard src/asm/*.c)
+# net.c is the Winsock networking device; it lives in the host GUI layer.
+SIM_SRC    := $(filter-out src/sim/net.c,$(wildcard src/sim/*.c))
 
 COMMON_OBJ := $(patsubst src/%.c,$(OBJDIR)/%.o,$(COMMON_SRC))
 ASM_OBJ    := $(patsubst src/%.c,$(OBJDIR)/%.o,$(ASM_SRC))
+SIM_OBJ    := $(patsubst src/%.c,$(OBJDIR)/%.o,$(SIM_SRC))
 
 LIBCOMMON  := $(LIBDIR)/libcommon.a
 LIBASM     := $(LIBDIR)/libasm68k.a
+LIBSIM     := $(LIBDIR)/libsim68k.a
 
 # ---- top-level -------------------------------------------------------
-.PHONY: all libs asm68k clean test dirs
-all: asm68k
+.PHONY: all libs asm68k sim68k clean test dirs
+all: asm68k sim68k
 
-libs: $(LIBCOMMON) $(LIBASM)
+libs: $(LIBCOMMON) $(LIBASM) $(LIBSIM)
 
 asm68k: $(BINDIR)/asm68k
+sim68k: $(BINDIR)/sim68k
 
 # ---- pattern rule for all C objects ----------------------------------
 $(OBJDIR)/%.o: src/%.c
@@ -61,13 +67,22 @@ $(LIBASM): $(ASM_OBJ)
 	@mkdir -p $(LIBDIR)
 	$(AR) $(ARFLAGS) $@ $^
 
+$(LIBSIM): $(SIM_OBJ)
+	@mkdir -p $(LIBDIR)
+	$(AR) $(ARFLAGS) $@ $^
+
 # ---- command-line assembler -----------------------------------------
 $(BINDIR)/asm68k: app/cli/asm68k.c $(LIBASM) $(LIBCOMMON)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBASM) $(LIBCOMMON)
 
+# ---- command-line simulator -----------------------------------------
+$(BINDIR)/sim68k: app/cli/sim68k.c $(LIBSIM) $(LIBCOMMON)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBSIM) $(LIBCOMMON)
+
 # ---- tests -----------------------------------------------------------
-test: asm68k
+test: asm68k sim68k
 	@tests/run_tests.sh
 
 # ---- housekeeping ----------------------------------------------------

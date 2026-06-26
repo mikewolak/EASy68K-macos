@@ -18,10 +18,10 @@ The routines are :
 
 #include <stdio.h>
 #include "extern.h"         /* contains global declarations */
-#include "SIM68Ku.h"
-#include "hardwareu.h"
-#include "Memory1.h"
-#include "PROTO.H"
+#include "simhost.h"
+
+
+#include "proto.h"
 
 extern int ROMStart, ROMEnd, ReadStart, ReadEnd;
 extern int ProtectedStart, ProtectedEnd, InvalidStart, InvalidEnd;
@@ -245,7 +245,7 @@ int a_reg (int reg_num)
 
 int memoryMapCheck(maptype mapt, int loc, int bytes)
 {
-  AnsiString str;
+
 
   // if hardware access (hardware access always permitted)
   if(( (loc >= seg7loc && loc <= seg7loc+15) ||
@@ -259,8 +259,7 @@ int memoryMapCheck(maptype mapt, int loc, int bytes)
       exceptionHandler (0, (int32_t) loc, WRITE);
     }else{
       haltSimulator();
-      Form1->Message->Lines->Add(str.sprintf
-        ("Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+      snprintf(buffer, sizeof(buffer), "Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
     }
     return BUS_ERROR;
   }
@@ -275,8 +274,7 @@ int memoryMapCheck(maptype mapt, int loc, int bytes)
         exceptionHandler (0, (int32_t) loc, WRITE);
       }else{
         haltSimulator();
-        Form1->Message->Lines->Add(str.sprintf
-          ("Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+        snprintf(buffer, sizeof(buffer), "Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
       }
       return BUS_ERROR;
     }
@@ -284,14 +282,13 @@ int memoryMapCheck(maptype mapt, int loc, int bytes)
 
   if(ProtectedMap && (mapt & Protected)) {    // if Protected map (bus error if not supervisor mode)
     if(loc+bytes-1 >= ProtectedStart && loc <= ProtectedEnd){ // if Protected memory area
-      if (Form1->regSR->EditText[3] == '0'){    // if not Supervisor mode
+      if (!(SR & sbit)){    // if not Supervisor mode
         if (exceptions) {
           mem_req (0x8, LONG_MASK, &PC);        // get bus error vector
           exceptionHandler (0, (int32_t) loc, WRITE);
         }else{
           haltSimulator();
-          Form1->Message->Lines->Add(str.sprintf
-            ("Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+          snprintf(buffer, sizeof(buffer), "Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
         }
         return BUS_ERROR;
       }
@@ -305,8 +302,7 @@ int memoryMapCheck(maptype mapt, int loc, int bytes)
         exceptionHandler (0, (int32_t) loc, WRITE);
       }else{
         haltSimulator();
-        Form1->Message->Lines->Add(str.sprintf
-          ("Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+        snprintf(buffer, sizeof(buffer), "Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
       }
       return BUS_ERROR;
     }
@@ -338,7 +334,7 @@ int memoryMapCheck(maptype mapt, int loc, int bytes)
 
 int mem_put (int32_t data, int loc, int32_t size)
 {
-  AnsiString str;
+
   int bytes = 1;
   int code;
 
@@ -357,8 +353,7 @@ int mem_put (int32_t data, int loc, int32_t size)
       exceptionHandler (0, (int32_t) loc, WRITE);
     }else{
       haltSimulator();
-      Form1->Message->Lines->Add(str.sprintf
-        ("Address Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+      snprintf(buffer, sizeof(buffer), "Address Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
     }
     return (ADDR_ERROR);
   }
@@ -393,8 +388,8 @@ int mem_put (int32_t data, int loc, int32_t size)
 
   writeEA = (int32_t *)&memory[loc];
   bpWrite = true;
-  Hardware->updateIfNeeded(loc);        // update hardware display
-  MemoryFrm->LivePaint(loc);            // update memory display
+  simHardwareUpdate(loc);        // update hardware display
+  simMemoryUpdate(loc);            // update memory display
   return SUCCESS;
 }
 
@@ -420,7 +415,7 @@ int mem_put (int32_t data, int loc, int32_t size)
 int mem_req (int loc, int32_t size, int32_t *result)
 {
   int32_t	temp;
-  AnsiString str;
+
 
   /* check for odd location reference on word and longword reads. */
   /* If there is a violation, initiate an address exception */
@@ -433,8 +428,7 @@ int mem_req (int loc, int32_t size, int32_t *result)
       exceptionHandler (0, (int32_t) loc, READ);
     }else{
       haltSimulator();
-      Form1->Message->Lines->Add(str.sprintf
-        ("Address Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+      snprintf(buffer, sizeof(buffer), "Address Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
     }
     return (ADDR_ERROR);
   }
@@ -457,8 +451,7 @@ int mem_req (int loc, int32_t size, int32_t *result)
           exceptionHandler (0, (int32_t) loc, WRITE);
         }else{
           haltSimulator();
-          Form1->Message->Lines->Add(str.sprintf
-            ("Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+          snprintf(buffer, sizeof(buffer), "Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
         }
         return (BUS_ERROR);
       }
@@ -466,14 +459,13 @@ int mem_req (int loc, int32_t size, int32_t *result)
 
     if(ProtectedMap) {    // bus error if not supervisor mode
       if(loc >= ProtectedStart && loc <= ProtectedEnd){ // if Protected memory area
-        if (Form1->regSR->EditText[3] == '0'){    // if not Supervisor mode
+        if (!(SR & sbit)){    // if not Supervisor mode
           if (exceptions) {
             mem_req (0x8, LONG_MASK, &PC);        // get bus error vector
             exceptionHandler (0, (int32_t) loc, WRITE);
           }else{
             haltSimulator();
-            Form1->Message->Lines->Add(str.sprintf
-              ("Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc));
+            snprintf(buffer, sizeof(buffer), "Bus Error: Instruction at %4x accessing address %4x", OLD_PC, loc), simMessage(buffer);
           }
           return (BUS_ERROR);
         }
@@ -579,11 +571,14 @@ void put (int32_t *dest, int32_t source, int32_t size)
 //  else          // else dest is register
 //    *dest = (source & size) | (*dest & ~size);
 
-  // if dest is register
-  if ( ( (int)dest >= (int)&D[0] ) && ( (int)dest < (int)&inst ) )
+  // if dest is register (the 68000 register globals D..inst are laid out
+  // contiguously; memory[] is a separate heap block). Use uintptr_t so the
+  // address comparison is correct on 64-bit hosts (a plain int cast would
+  // truncate the heap pointer and could alias the register range).
+  if ( ( (uintptr_t)dest >= (uintptr_t)&D[0] ) && ( (uintptr_t)dest < (uintptr_t)&inst ) )
     *dest = (source & size) | (*dest & ~size);
   else          // else dest is memory
-    mem_put (source, (int) ((int)dest - (int)&memory[0]), size);
+    mem_put (source, (int) ((uintptr_t)dest - (uintptr_t)&memory[0]), size);
 }
 
 /**************************** int value_of() *******************************
@@ -611,11 +606,11 @@ void value_of (int32_t *EA, int32_t *EV, int32_t size)
 //  else
 //    mem_req ( (int) ((int)EA - (int)&memory[0]), size, EV);
 
-  // if EA is register
-  if ( ( (int)EA >= (int)&D[0] ) && ( (int)EA < (int)&inst ) )
+  // if EA is register (see put() above for the uintptr_t rationale)
+  if ( ( (uintptr_t)EA >= (uintptr_t)&D[0] ) && ( (uintptr_t)EA < (uintptr_t)&inst ) )
     *EV = *EA & size;
   else          // else EA is memory
-    mem_req ( (int) ((int)EA - (int)&memory[0]), size, EV);
+    mem_req ( (int) ((uintptr_t)EA - (uintptr_t)&memory[0]), size, EV);
 }
 
 
@@ -874,10 +869,5 @@ ushort flip(ushort *n)
 {
   const byte *b = (byte *) n;
   return b[0]<<8 | b[1];
-}
-
-ushort flip(ushort &n)
-{
-  return flip(&n);
 }
 
