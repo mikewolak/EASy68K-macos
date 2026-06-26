@@ -8,6 +8,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface ASMDocument : NSDocument
 @property (nonatomic, copy) NSString *text;        // source content
+
+// ---- Remote control (HTTP control server; main thread) ----
+- (NSString *)remoteSourceText;
+- (void)remoteSetSourceText:(NSString *)text;
+- (NSDictionary *)remoteAssemble;          // {diagnostics:[{line,message}], count}
+- (void)remoteRunInSimulator;
 @end
 
 NS_ASSUME_NONNULL_END

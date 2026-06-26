@@ -6,6 +6,7 @@
 #import "SyntaxHighlighter.h"
 #import "LineNumberRuler.h"
 #import "ASMAssembler.h"
+#import "SimController.h"
 
 #pragma mark - Editor window controller
 
@@ -224,47 +225,20 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
 - (void)runProgram:(id)sender {
     // Assemble first; only run a clean build.
     [self assemble:sender];
-    if (self.diagnostics.count) {
-        for (ASMDiagnostic *d in self.diagnostics)
-            if (![d.message hasPrefix:@"WARNING"]) {
-                self.statusField.stringValue = @"Fix errors before running.";
-                return;
-            }
-    }
+    for (ASMDiagnostic *d in self.diagnostics)
+        if (![d.message hasPrefix:@"WARNING"]) {
+            self.statusField.stringValue = @"Fix errors before running.";
+            return;
+        }
     ASMDocument *doc = (ASMDocument *)self.document;
     NSString *srec = [[doc.fileURL.path stringByDeletingPathExtension] stringByAppendingPathExtension:@"S68"];
     if (![[NSFileManager defaultManager] fileExistsAtPath:srec]) {
         self.statusField.stringValue = @"No S-record to run.";
         return;
     }
-
-    // Locate the sim68k tool (bundled next to the app executable, else PATH/build).
-    NSString *exeDir = [[NSBundle mainBundle].executablePath stringByDeletingLastPathComponent];
-    NSString *sim = [exeDir stringByAppendingPathComponent:@"sim68k"];
-    if (![[NSFileManager defaultManager] isExecutableFileAtPath:sim]) sim = @"/usr/local/bin/sim68k";
-
-    NSTask *task = [[NSTask alloc] init];
-    task.executableURL = [NSURL fileURLWithPath:sim];
-    task.arguments = @[srec];
-    NSPipe *out = [NSPipe pipe];
-    task.standardOutput = out;
-    task.standardError = [NSPipe pipe];   // discard the diagnostic stream
-
-    NSError *err = nil;
-    if (![task launchAndReturnError:&err]) {
-        self.statusField.stringValue = [NSString stringWithFormat:@"Run failed: %@", err.localizedDescription];
-        return;
-    }
-    NSData *data = [out.fileHandleForReading readDataToEndOfFile];
-    [task waitUntilExit];
-    NSString *output = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
-
-    self.statusField.stringValue = @"Program finished.";
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Program Output";
-    alert.informativeText = output.length ? output : @"(no output)";
-    [alert addButtonWithTitle:@"OK"];
-    [alert beginSheetModalForWindow:self.window completionHandler:nil];
+    // Open the integrated native simulator window and load the program.
+    [[SimController sharedController] loadAndShow:srec title:doc.fileURL.lastPathComponent];
+    self.statusField.stringValue = @"Opened simulator.";
 }
 
 - (void)jumpToDiagnostic:(id)sender {
@@ -337,6 +311,35 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
     EditorWindowController *wc = self.windowControllers.firstObject;
     if (wc) [wc loadText:self.text];
     return YES;
+}
+
+#pragma mark Remote control
+
+- (NSString *)remoteSourceText {
+    EditorWindowController *wc = self.windowControllers.firstObject;
+    return wc ? wc.editor.string : self.text;
+}
+
+- (void)remoteSetSourceText:(NSString *)text {
+    self.text = text ?: @"";
+    EditorWindowController *wc = self.windowControllers.firstObject;
+    if (wc) [wc loadText:self.text];
+    [self updateChangeCount:NSChangeDone];
+}
+
+- (NSDictionary *)remoteAssemble {
+    EditorWindowController *wc = self.windowControllers.firstObject;
+    if (!wc) return @{ @"error": @"no editor window" };
+    [wc assemble:nil];
+    NSMutableArray *diags = [NSMutableArray array];
+    for (ASMDiagnostic *d in wc.diagnostics)
+        [diags addObject:@{ @"line": @(d.line), @"message": d.message ?: @"" }];
+    return @{ @"diagnostics": diags, @"count": @(wc.diagnostics.count) };
+}
+
+- (void)remoteRunInSimulator {
+    EditorWindowController *wc = self.windowControllers.firstObject;
+    [wc runProgram:nil];
 }
 
 @end

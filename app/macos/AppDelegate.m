@@ -3,11 +3,29 @@
 //  EASy68K for macOS — application delegate + programmatic main menu.
 //
 #import "AppDelegate.h"
+#import "SimRemoteServer.h"
+#import "SimController.h"
 
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     [self buildMainMenu];
+
+    // Localhost control API. Port is configurable because the user may run
+    // several such servers at once:
+    //   --control-port N   command-line argument
+    //   EASY68K_CONTROL_PORT=N   environment variable
+    //   --no-control       disable entirely
+    NSProcessInfo *pi = NSProcessInfo.processInfo;
+    uint16_t port = 8068;
+    NSString *env = pi.environment[@"EASY68K_CONTROL_PORT"];
+    if (env.length) port = (uint16_t)env.intValue;
+    NSUInteger idx = [pi.arguments indexOfObject:@"--control-port"];
+    if (idx != NSNotFound && idx + 1 < pi.arguments.count)
+        port = (uint16_t)[pi.arguments[idx + 1] intValue];
+    if (![pi.arguments containsObject:@"--no-control"] && port != 0)
+        [[SimRemoteServer sharedServer] startOnPort:port];
+
     [NSApp activateIgnoringOtherApps:YES];
 }
 

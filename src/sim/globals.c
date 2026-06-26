@@ -117,6 +117,12 @@ bool ROMMap=false, ReadMap=false, ProtectedMap=false, InvalidMap=false;
 // Memory-mapped hardware device locations (0 = not mapped).
 int seg7loc=0, LEDloc=0, switchLoc=0, pbLoc=0;
 
+// Legacy text-console scroll helpers (used by the old command-mode code in
+// simops1.c / strutils.c). The host console manages its own scrolling, so
+// these are no-ops in the macOS port.
+void windowLine(void) {}
+void scrollWindow(void) {}
+
 // Full-screen output target (0 = primary, 1+ = secondary monitors)
 unsigned char FullScreenMonitor;
 char FullScreenDeviceName[32];

@@ -826,7 +826,7 @@ instruction instTable[] = {
 	{ "LSL", lslfl, flavorCount(lslfl), true, NULL },
 	{ "LSR", lsrfl, flavorCount(lsrfl), true, NULL },
         { "MACRO", NULL, 0, false, macro },
-        { "MEMORY", NULL, 0, false, memory },
+        { "MEMORY", NULL, 0, false, asmMemoryDirective },
 	{ "MOVE", movefl, flavorCount(movefl), true, NULL },
 	{ "MOVEA", moveafl, flavorCount(moveafl), true, NULL },
 	//{ "MOVEC", movecfl, flavorCount(movecfl), true, NULL },

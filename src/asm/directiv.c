@@ -873,7 +873,7 @@ int listOff(int size, char *label, char *message, int *errorPtr)
 //	MEMORY directive
 //**********************************************************************
 
-int memory(int size, char *label, char *op, int *errorPtr)
+int asmMemoryDirective(int size, char *label, char *op, int *errorPtr)
 {
   int i;
   const int MAXCHARS = 10;       // max number of characters in operand

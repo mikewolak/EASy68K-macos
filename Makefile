@@ -35,10 +35,14 @@ COMMON_SRC := $(wildcard src/common/*.c)
 ASM_SRC    := $(wildcard src/asm/*.c)
 # net.c is the Winsock networking device; it lives in the host GUI layer.
 SIM_SRC    := $(filter-out src/sim/net.c,$(wildcard src/sim/*.c))
+# Sim core WITHOUT the CLI host (simhost_cli.c): the Cocoa app supplies its
+# own host (SimBridge), so it links these objects directly.
+SIM_CORE_SRC := $(filter-out src/sim/net.c src/sim/simhost_cli.c,$(wildcard src/sim/*.c))
 
 COMMON_OBJ := $(patsubst src/%.c,$(OBJDIR)/%.o,$(COMMON_SRC))
 ASM_OBJ    := $(patsubst src/%.c,$(OBJDIR)/%.o,$(ASM_SRC))
 SIM_OBJ    := $(patsubst src/%.c,$(OBJDIR)/%.o,$(SIM_SRC))
+SIM_CORE_OBJ := $(patsubst src/%.c,$(OBJDIR)/%.o,$(SIM_CORE_SRC))
 
 LIBCOMMON  := $(LIBDIR)/libcommon.a
 LIBASM     := $(LIBDIR)/libasm68k.a
@@ -46,8 +50,14 @@ LIBSIM     := $(LIBDIR)/libsim68k.a
 
 # ---- macOS app -------------------------------------------------------
 APP        := build/EASy68K.app
-MACOS_SRC  := $(wildcard app/macos/*.m)
+MACOS_M    := $(wildcard app/macos/*.m)
+MACOS_C    := $(wildcard app/macos/*.c)
 APP_EXE    := $(APP)/Contents/MacOS/EASy68K
+# The sim core and the assembler share a few global names (buffer, eval,
+# numBuf, newFile) — fine when they were separate .exe's, but they collide
+# inside the unified app. Pre-link the sim core into one relocatable object
+# with those symbols localized so each engine keeps its own.
+SIMCORE_COMBINED := $(OBJDIR)/simcore_combined.o
 
 # ---- top-level -------------------------------------------------------
 .PHONY: all libs asm68k sim68k app run-app clean test dirs
@@ -87,14 +97,21 @@ $(BINDIR)/sim68k: app/cli/sim68k.c $(LIBSIM) $(LIBCOMMON)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBSIM) $(LIBCOMMON)
 
-# ---- macOS Cocoa app (Objective-C editor calling libasm68k) ----------
-# The "Run" button shells out to the bundled sim68k, so the app embeds it.
-$(APP): $(MACOS_SRC) app/macos/Info.plist $(LIBASM) $(LIBCOMMON) $(BINDIR)/sim68k
+# ---- macOS Cocoa app -------------------------------------------------
+# The editor calls libasm68k; the integrated simulator window links the sim
+# core directly (SIM_CORE_OBJ) and supplies a Cocoa host via SimBridge.c.
+# The .c bridge is compiled as plain C (no Cocoa headers) so the sim core's
+# def.h constants don't clash with system headers; the .m files are ObjC.
+$(SIMCORE_COMBINED): $(SIM_CORE_OBJ) app/macos/sim_hidden.txt
+	@mkdir -p $(dir $@)
+	ld -r -unexported_symbols_list app/macos/sim_hidden.txt $(SIM_CORE_OBJ) -o $@
+
+$(APP): $(MACOS_M) $(MACOS_C) app/macos/Info.plist $(LIBASM) $(LIBCOMMON) $(SIMCORE_COMBINED) $(BINDIR)/sim68k
 	@mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp app/macos/Info.plist $(APP)/Contents/Info.plist
 	cp $(BINDIR)/sim68k $(APP)/Contents/MacOS/sim68k
 	$(CC) -fobjc-arc -fmodules $(CPPFLAGS) -framework Cocoa \
-	    $(MACOS_SRC) $(LIBASM) $(LIBCOMMON) -o $(APP_EXE)
+	    $(MACOS_M) $(MACOS_C) $(SIMCORE_COMBINED) $(LIBASM) $(LIBCOMMON) -o $(APP_EXE)
 	@echo "built $(APP)"
 
 run-app: $(APP)
