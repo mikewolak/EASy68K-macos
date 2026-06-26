@@ -20,6 +20,7 @@
 #import "SimGraphicsView.h"
 #import "SimListingView.h"
 #import "SimStackView.h"
+#import "SimLogController.h"
 #import "E68Theme.h"
 #import "SimGfxBridge.h"
 #import <stdlib.h>
@@ -36,6 +37,7 @@ static NSToolbarItemIdentifier const kPause     = @"sim.pause";
 static NSToolbarItemIdentifier const kReset     = @"sim.reset";
 static NSToolbarItemIdentifier const kReload    = @"sim.reload";
 static NSToolbarItemIdentifier const kStack     = @"sim.stack";
+static NSToolbarItemIdentifier const kLog       = @"sim.log";
 
 @interface SimController () <NSToolbarDelegate, NSTextFieldDelegate>
 @property (nonatomic, strong) NSTextView *registersView;
@@ -299,6 +301,8 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self.stackView refresh];
 }
 
+- (void)showLog:(id)sender { [[SimLogController shared] showLog]; }
+
 // Breakpoint toggled from the listing gutter. The listing view holds the
 // breakpoint set; run: snapshots it. (A dedicated Breakpoints window will hook
 // here too.)
@@ -318,7 +322,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     return @[kOpen, NSToolbarSpaceItemIdentifier,
              kRun, kRunCursor, kAutoTrace, kStep, kTrace, kPause,
              NSToolbarFlexibleSpaceItemIdentifier,
-             kStack, kReload, kReset];
+             kStack, kLog, kReload, kReset];
 }
 - (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar *)t {
     return [[self toolbarDefaultItemIdentifiers:t] arrayByAddingObjectsFromArray:
@@ -336,6 +340,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     else if ([i isEqual:kTrace])     { sym=@"arrow.turn.down.right"; label=@"Trace"; a=@selector(traceInto:); }
     else if ([i isEqual:kPause])     { sym=@"pause.fill"; label=@"Pause";  a=@selector(pause:); }
     else if ([i isEqual:kStack])     { sym=@"square.stack.3d.up"; label=@"Stack"; a=@selector(showStackWindow:); }
+    else if ([i isEqual:kLog])       { sym=@"doc.text"; label=@"Log"; a=@selector(showLog:); }
     else if ([i isEqual:kReload])    { sym=@"arrow.clockwise"; label=@"Reload"; a=@selector(reload:); }
     else if ([i isEqual:kReset])     { sym=@"arrow.counterclockwise"; label=@"Reset"; a=@selector(resetSim:); }
     else return nil;

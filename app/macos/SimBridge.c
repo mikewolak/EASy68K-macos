@@ -133,7 +133,11 @@ void simSetMenuTrace(void)              {}
 void simSetMenuActive(void)             {}
 void simSetMenuTask19(void)             {}
 void simRestoreMenuTask19(void)         {}
-bool simLineToLog(void)                 { return true; }
+// Return false so run.c writes the instruction line (PC/Code/mnemonic) to the
+// execution log itself. (The original returned true only because it had already
+// written the source-listing line; we don't have the listing in the core, so we
+// let the core's built-in instruction line be logged.)
+bool simLineToLog(void)                 { return false; }
 void simSaveSettings(void)              {}
 void simSetExceptionsEnabled(bool e)    { (void)e; }
 void simProcessMessages(void)           {}

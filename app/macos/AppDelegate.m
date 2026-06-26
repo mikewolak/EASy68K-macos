@@ -19,6 +19,7 @@
 #import "SimController.h"
 #import "AboutWindowController.h"
 #import "SettingsWindowController.h"
+#import "SimLogController.h"
 #import "E68Theme.h"
 
 @implementation AppDelegate
@@ -50,6 +51,7 @@
 - (void)decreaseFontSize:(id)sender { [[E68Theme shared] decreaseFontSize]; }
 - (void)resetFontSize:(id)sender    { [[E68Theme shared] resetFontSize]; }
 - (void)showStackWindow:(id)sender  { [[SimController sharedController] showStackWindow:sender]; }
+- (void)showLogWindow:(id)sender    { [[SimLogController shared] showLog]; }
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
 
@@ -155,6 +157,9 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     NSMenuItem *stackWin = Item(@"68000 Stack", @selector(showStackWindow:), @"");
     stackWin.target = self;
     [windowMenu addItem:stackWin];
+    NSMenuItem *logWin = Item(@"Execution Log", @selector(showLogWindow:), @"");
+    logWin.target = self;
+    [windowMenu addItem:logWin];
     [windowMenu addItem:[NSMenuItem separatorItem]];
     [windowMenu addItem:Item(@"Bring All to Front", @selector(arrangeInFront:), @"")];
     NSApp.windowsMenu = windowMenu;

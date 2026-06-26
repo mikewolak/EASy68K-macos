@@ -818,9 +818,9 @@ int exec_inst()
               if (ElogFlag == REGISTERS || ElogFlag == INST_REG_MEM) {
                 fprintf(ElogFile,"\n");
                 // output registers to log file
-                fprintf(ElogFile,"D0=%08lX D4=%08lX A0=%08lX A4=%08lX    T_S__INT___XNZVC\n",
+                fprintf(ElogFile,"D0=%08X D4=%08X A0=%08X A4=%08X    T_S__INT___XNZVC\n",
                                   D[0],D[4],A[0],A[4]);
-                fprintf(ElogFile,"D1=%08lX D5=%08lX A1=%08lX A5=%08lX SR=",
+                fprintf(ElogFile,"D1=%08X D5=%08X A1=%08X A5=%08X SR=",
                                   D[1],D[5],A[1],A[5]);
                 for (int j=0; j<16; j++) {        // display each bit of SR
                   if ((0x8000 >> j) & SR)
@@ -828,9 +828,9 @@ int exec_inst()
                   else
                     fprintf(ElogFile,"0");
                 }
-                fprintf(ElogFile,"\nD2=%08lX D6=%08lX A2=%08lX A6=%08lX US=%08lX\n",
+                fprintf(ElogFile,"\nD2=%08X D6=%08X A2=%08X A6=%08X US=%08X\n",
                                   D[2],D[6],A[2],A[6],A[7]);
-                fprintf(ElogFile,"D3=%08lX D7=%08lX A3=%08lX A7=%08lX SS=%08lX\n",
+                fprintf(ElogFile,"D3=%08X D7=%08X A3=%08X A7=%08X SS=%08X\n",
                                   D[3],D[7],A[3],A[a_reg(7)],A[8]);
               }
 
