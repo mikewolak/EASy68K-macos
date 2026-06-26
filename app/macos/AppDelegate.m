@@ -18,6 +18,8 @@
 #import "SimRemoteServer.h"
 #import "SimController.h"
 #import "AboutWindowController.h"
+#import "SettingsWindowController.h"
+#import "E68Theme.h"
 
 @implementation AppDelegate
 
@@ -43,6 +45,10 @@
 }
 
 - (void)showAbout:(id)sender { [AboutWindowController showAbout]; }
+- (void)showSettings:(id)sender { [SettingsWindowController showSettings]; }
+- (void)increaseFontSize:(id)sender { [[E68Theme shared] increaseFontSize]; }
+- (void)decreaseFontSize:(id)sender { [[E68Theme shared] decreaseFontSize]; }
+- (void)resetFontSize:(id)sender    { [[E68Theme shared] resetFontSize]; }
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
 
@@ -66,6 +72,10 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     NSMenuItem *about = Item(@"About EASy68K", @selector(showAbout:), @"");
     about.target = self;
     [appMenu addItem:about];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *settings = Item(@"Settings…", @selector(showSettings:), @",");
+    settings.target = self;
+    [appMenu addItem:settings];
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItem:Item(@"Hide EASy68K", @selector(hide:), @"h")];
     NSMenuItem *hideOthers = Item(@"Hide Others", @selector(hideOtherApplications:), @"h");
@@ -112,6 +122,26 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     buildItem.submenu = buildMenu;
     [buildMenu addItem:Item(@"Assemble", @selector(assemble:), @"b")];
     [buildMenu addItem:Item(@"Assemble and Run", @selector(runProgram:), @"r")];
+
+    // --- View menu (font size) ---
+    NSMenuItem *viewItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:viewItem];
+    NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
+    viewItem.submenu = viewMenu;
+    NSMenuItem *bigger = Item(@"Increase Font Size", @selector(increaseFontSize:), @"+");
+    bigger.target = self;
+    [viewMenu addItem:bigger];
+    // also accept ⌘= (so Shift isn't required for the + key)
+    NSMenuItem *biggerEq = Item(@"Increase Font Size", @selector(increaseFontSize:), @"=");
+    biggerEq.target = self; biggerEq.alternate = YES;
+    biggerEq.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+    [viewMenu addItem:biggerEq];
+    NSMenuItem *smaller = Item(@"Decrease Font Size", @selector(decreaseFontSize:), @"-");
+    smaller.target = self;
+    [viewMenu addItem:smaller];
+    NSMenuItem *resetF = Item(@"Actual Size", @selector(resetFontSize:), @"0");
+    resetF.target = self;
+    [viewMenu addItem:resetF];
 
     // --- Window menu ---
     NSMenuItem *windowItem = [[NSMenuItem alloc] init];

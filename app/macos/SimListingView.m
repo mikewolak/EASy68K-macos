@@ -14,6 +14,7 @@
 //  SimListingView.m
 //
 #import "SimListingView.h"
+#import "E68Theme.h"
 
 #define GUTTER 18.0
 
@@ -110,7 +111,9 @@ static BOOL lineIsInstruction(NSString *line) {
         _instrRows = [NSMutableIndexSet indexSet];
         _breaks = [NSMutableSet set];
         _pcRow = -1;
-        _font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+        _font = [E68Theme shared].monoSmallFont;
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(themeChanged)
+                                                     name:E68ThemeChangedNotification object:nil];
 
         NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:self.bounds];
         scroll.hasVerticalScroller = YES;
@@ -136,6 +139,15 @@ static BOOL lineIsInstruction(NSString *line) {
         [self addSubview:scroll];
     }
     return self;
+}
+
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+
+- (void)themeChanged {
+    _font = [E68Theme shared].monoSmallFont;
+    _table.rowHeight = ceil([[NSLayoutManager new] defaultLineHeightForFont:_font]);
+    [_table reloadData];
+    if (_pcRow >= 0) [self centerRow:_pcRow];
 }
 
 #pragma mark loading
@@ -213,8 +225,14 @@ static BOOL lineIsInstruction(NSString *line) {
 }
 
 - (void)highlightPC:(uint32_t)pc halted:(BOOL)halted {
-    NSInteger row = [self rowForAddress:pc instructionOnly:!halted];
-    if (row < 0 && halted) row = [self rowForAddress:pc instructionOnly:NO];
+    // Always prefer the actual instruction line at PC. Comment/blank/label
+    // lines in the .L68 carry the SAME address as the instruction that follows
+    // them (the location counter doesn't advance for them), so matching the
+    // first line at the address would land on a blank line. Fall back to any
+    // line only when PC has no instruction line (e.g. executing in data).
+    NSInteger row = [self rowForAddress:pc instructionOnly:YES];
+    if (row < 0) row = [self rowForAddress:pc instructionOnly:NO];
+    (void)halted;
     NSInteger old = _pcRow;
     _pcRow = row;
     if (old >= 0 && old < (NSInteger)_lines.count) [self refreshRow:old];

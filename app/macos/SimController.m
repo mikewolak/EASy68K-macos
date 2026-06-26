@@ -19,6 +19,7 @@
 #import "SimBridge.h"
 #import "SimGraphicsView.h"
 #import "SimListingView.h"
+#import "E68Theme.h"
 #import "SimGfxBridge.h"
 #import <stdlib.h>
 #import <string.h>
@@ -210,6 +211,18 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
         [status.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-5],
     ]];
     self.statusField = status;
+
+    // restyle the mono panes live when the font-size setting changes
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(themeChanged)
+                                                 name:E68ThemeChangedNotification object:nil];
+    [self themeChanged];
+}
+
+- (void)themeChanged {
+    NSFont *f = [E68Theme shared].monoFont;
+    self.registersView.font = f;
+    self.memoryView.font = f;
+    if (self.programLoaded) { [self refreshRegisters]; [self refreshMemory]; }
 }
 
 // The simulator I/O window (separate from the main listing window, matching the
