@@ -15,3 +15,10 @@ reference/unpacked/
 
 # Editor
 *.swp
+
+# Assembler test outputs (golden .S68 are tracked; generated ones are not)
+tests/asm/*.L68
+tests/asm/*.easytmp
+tests/asm/hello.S68
+tests/asm/structured.S68
+tests/asm/macro.S68
