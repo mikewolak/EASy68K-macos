@@ -122,7 +122,7 @@ static BOOL lineIsInstruction(NSString *line) {
         _table.dataSource = self;
         _table.delegate = self;
         _table.headerView = nil;
-        _table.rowHeight = ceil(_font.ascender - _font.descender + _font.leading) + 2;
+        _table.rowHeight = ceil([[NSLayoutManager new] defaultLineHeightForFont:_font]);
         _table.intercellSpacing = NSMakeSize(0, 0);
         _table.backgroundColor = NSColor.textBackgroundColor;
         _table.gridStyleMask = NSTableViewGridNone;
@@ -220,8 +220,22 @@ static BOOL lineIsInstruction(NSString *line) {
     if (old >= 0 && old < (NSInteger)_lines.count) [self refreshRow:old];
     if (row >= 0) {
         [self refreshRow:row];
-        [_table scrollRowToVisible:row];
+        [self centerRow:row];
     }
+}
+
+// Scroll so the given row sits in the vertical middle of the viewport, so the
+// upcoming instructions below the current one are visible.
+- (void)centerRow:(NSInteger)row {
+    NSClipView *clip = _table.enclosingScrollView.contentView;
+    if (!clip) { [_table scrollRowToVisible:row]; return; }
+    NSRect rowRect = [_table rectOfRow:row];
+    CGFloat half = NSHeight(clip.bounds) / 2.0;
+    CGFloat y = NSMidY(rowRect) - half;
+    CGFloat maxY = NSHeight(_table.bounds) - NSHeight(clip.bounds);
+    if (y < 0) y = 0;
+    if (maxY > 0 && y > maxY) y = maxY;
+    [_table scrollPoint:NSMakePoint(0, y)];
 }
 
 - (void)refreshRow:(NSInteger)row {
@@ -277,9 +291,44 @@ static BOOL lineIsInstruction(NSString *line) {
         tf.font = _font;
         tf.lineBreakMode = NSLineBreakByClipping;
     }
-    tf.stringValue = _lines[row];
-    tf.textColor = [_instrRows containsIndex:row] ? NSColor.labelColor : NSColor.secondaryLabelColor;
+    tf.attributedStringValue = [self colorizeLine:_lines[row]];
     return tf;
+}
+
+// Syntax-colour a .L68 listing line by its fixed columns: address (1-8),
+// machine code + line number (the dim middle), then the source field with the
+// comment tail picked out — so the debugger reads like a debugger, not a dump.
+- (NSAttributedString *)colorizeLine:(NSString *)line {
+    static NSColor *cAddr, *cDim, *cSrc, *cCmt;
+    if (!cAddr) {
+        cAddr = [NSColor colorWithCalibratedRed:0.30 green:0.62 blue:0.86 alpha:1.0]; // address
+        cDim  = NSColor.tertiaryLabelColor;                                            // machine code / line #
+        cSrc  = NSColor.labelColor;                                                    // source
+        cCmt  = [NSColor colorWithCalibratedRed:0.36 green:0.62 blue:0.36 alpha:1.0]; // comment
+    }
+    NSMutableAttributedString *as =
+        [[NSMutableAttributedString alloc] initWithString:line
+            attributes:@{ NSFontAttributeName: _font, NSForegroundColorAttributeName: cSrc }];
+    NSUInteger len = line.length;
+    if (len == 0) return as;
+    BOOL hasAddr = (parseAddrCol(line) >= 0);
+    if (hasAddr && len >= 8)
+        [as addAttribute:NSForegroundColorAttributeName value:cAddr range:NSMakeRange(0, 8)];
+    // dim middle (machine code + line number columns)
+    if (hasAddr && len > 8) {
+        NSUInteger end = MIN((NSUInteger)33, len);
+        if (end > 8)
+            [as addAttribute:NSForegroundColorAttributeName value:cDim range:NSMakeRange(8, end - 8)];
+    }
+    // comment tail: an asterisk-introduced comment runs to end of line
+    NSUInteger from = (hasAddr && len > 33) ? 33 : 0;
+    if (from < len) {
+        NSRange star = [line rangeOfString:@"*" options:0 range:NSMakeRange(from, len - from)];
+        if (star.location != NSNotFound)
+            [as addAttribute:NSForegroundColorAttributeName value:cCmt
+                       range:NSMakeRange(star.location, len - star.location)];
+    }
+    return as;
 }
 
 - (NSTableRowView *)tableView:(NSTableView *)tableView rowViewForRow:(NSInteger)row {

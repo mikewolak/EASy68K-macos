@@ -389,7 +389,6 @@ static int macCharToVK(unichar c) {
     NSString *chars = e.charactersIgnoringModifiers;
     if (chars.length) {
         int vk = macCharToVK([chars characterAtIndex:0]);
-        fprintf(stderr,"[keyDown] char=0x%04x vk=0x%02x\n",(unsigned)[chars characterAtIndex:0],vk); // DEBUG
         if (vk > 0 && vk < 256) { _keyDown[vk] = 1; _lastKeyDown = vk; }
     }
 }
@@ -419,8 +418,6 @@ static int macCharToVK(unichar c) {
         uint8_t k = (codes >> (i*8)) & 0xFF;
         if (_keyDown[k]) out |= (0xFFu << (i*8));
     }
-    { static uint32_t lastq=0xDEAD; if (codes!=lastq){ lastq=codes;
-        fprintf(stderr,"[getKeyState] query codes=0x%08x -> 0x%08x\n",codes,out);} } // DEBUG
     return out;
 }
 - (void)lastKeyUp:(int *)up down:(int *)down { if(up)*up=_lastKeyUp; if(down)*down=_lastKeyDown; }
