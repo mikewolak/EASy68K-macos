@@ -23,6 +23,7 @@
 #import "SimBreakpointsView.h"
 #import "SimHardwareView.h"
 #import "SimHwBridge.h"
+#import "E68BrushedView.h"
 #import "SimLogController.h"
 #import "SimLogBridge.h"
 #import "E68Theme.h"
@@ -120,7 +121,7 @@ static void cbMemChanged(void *ctx, int addr) { (void)ctx; (void)addr; }
 }
 
 - (instancetype)init {
-    NSRect frame = NSMakeRect(0, 0, 960, 640);
+    NSRect frame = NSMakeRect(0, 0, 1240, 760);
     NSWindow *win = [[NSWindow alloc] initWithContentRect:frame
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                    NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
@@ -219,9 +220,11 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self buildBreakpointsWindow];
     [self buildHardwareWindow];
 
+    // registers pane wide enough for the SR flags line ("T=0 S=1 ... C=0"),
+    // the rest to the listing/memory so the 16-byte memory dump isn't clipped.
     dispatch_async(dispatch_get_main_queue(), ^{
-        [hsplit setPosition:250 ofDividerAtIndex:0];
-        [vsplit setPosition:NSHeight(vsplit.bounds) * 0.62 ofDividerAtIndex:0];
+        [hsplit setPosition:340 ofDividerAtIndex:0];
+        [vsplit setPosition:NSHeight(vsplit.bounds) * 0.66 ofDividerAtIndex:0];
     });
 
     // Status bar
@@ -301,6 +304,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"68000 Stack";
     w.releasedWhenClosed = NO;
+    [E68BrushedView installInWindow:w];
     self.stackView = [[SimStackView alloc] initWithFrame:((NSView *)w.contentView).bounds];
     self.stackView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [w.contentView addSubview:self.stackView];
@@ -320,6 +324,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"Break Points";
     w.releasedWhenClosed = NO;
+    [E68BrushedView installInWindow:w];
     self.bpView = [[SimBreakpointsView alloc] initWithFrame:((NSView *)w.contentView).bounds];
     self.bpView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.bpView.bpDelegate = (id)self;

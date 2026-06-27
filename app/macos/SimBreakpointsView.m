@@ -35,9 +35,11 @@
 
         NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:self.bounds];
         scroll.hasVerticalScroller = YES; scroll.borderType = NSBezelBorder;
+        scroll.drawsBackground = NO;
         _table = [[NSTableView alloc] initWithFrame:self.bounds];
         _table.dataSource = self; _table.delegate = self;
-        _table.rowHeight = 18; _table.usesAlternatingRowBackgroundColors = YES;
+        _table.backgroundColor = [NSColor colorWithCalibratedWhite:1 alpha:0.35];
+        _table.rowHeight = 18; _table.usesAlternatingRowBackgroundColors = NO;
         NSTableColumn *cAddr = [[NSTableColumn alloc] initWithIdentifier:@"addr"];
         cAddr.title = @"Address"; cAddr.width = 90;
         NSTableColumn *cSrc = [[NSTableColumn alloc] initWithIdentifier:@"src"];

@@ -41,10 +41,10 @@
         _scroll = [[NSScrollView alloc] initWithFrame:self.bounds];
         _scroll.hasVerticalScroller = YES;
         _scroll.borderType = NSNoBorder;
+        _scroll.drawsBackground = NO;
         _scroll.translatesAutoresizingMaskIntoConstraints = NO;
         _text = [[NSTextView alloc] initWithFrame:self.bounds];
-        _text.editable = NO; _text.richText = YES; _text.drawsBackground = YES;
-        _text.backgroundColor = NSColor.textBackgroundColor;
+        _text.editable = NO; _text.richText = YES; _text.drawsBackground = NO;
         _text.textContainerInset = NSMakeSize(8, 6);
         _scroll.documentView = _text;
         [self addSubview:_scroll];
@@ -95,7 +95,7 @@
     NSMutableAttributedString *out = [[NSMutableAttributedString alloc] init];
     NSDictionary *base = @{ NSFontAttributeName: font, NSForegroundColorAttributeName: NSColor.labelColor };
     NSDictionary *addrAttr = @{ NSFontAttributeName: font,
-        NSForegroundColorAttributeName: [NSColor colorWithCalibratedRed:0.30 green:0.62 blue:0.86 alpha:1.0] };
+        NSForegroundColorAttributeName: [NSColor colorWithCalibratedRed:0.16 green:0.52 blue:1.0 alpha:1.0] };
 
     for (int r = 0; r < nRows; r++) {
         uint32_t rowAddr = (uint32_t)((dispAddr + (long)r * 4) & ADDRMASK);

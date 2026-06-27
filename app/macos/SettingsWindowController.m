@@ -15,6 +15,7 @@
 //
 #import "SettingsWindowController.h"
 #import "E68Theme.h"
+#import "E68BrushedView.h"
 
 @implementation SettingsWindowController {
     NSSlider    *_fontSlider;
@@ -42,6 +43,7 @@
     w.title = @"Settings";
     w.releasedWhenClosed = NO;
     self.window = w;
+    [E68BrushedView installInWindow:w];
     NSView *root = w.contentView;
 
     NSTextField *title = [NSTextField labelWithString:@"Settings"];

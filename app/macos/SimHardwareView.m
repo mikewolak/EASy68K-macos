@@ -21,6 +21,7 @@
 //
 #import "SimHardwareView.h"
 #import "SimCore.h"
+#import "E68BrushedView.h"
 
 #define ADDRMASK 0x00FFFFFF
 
@@ -247,40 +248,7 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     }
 }
 
-// A premium brushed-aluminum surface: a soft vertical sheen + fine horizontal
-// brush striations + a subtle top highlight.
-- (void)drawBrushedAluminumIn:(NSRect)r {
-    NSGradient *base = [[NSGradient alloc] initWithColorsAndLocations:
-        [NSColor colorWithCalibratedWhite:0.86 alpha:1], 0.0,
-        [NSColor colorWithCalibratedWhite:0.78 alpha:1], 0.45,
-        [NSColor colorWithCalibratedWhite:0.72 alpha:1], 0.55,
-        [NSColor colorWithCalibratedWhite:0.82 alpha:1], 1.0, nil];
-    [base drawInRect:r angle:-90];
-
-    [NSGraphicsContext saveGraphicsState];
-    NSRectClip(r);
-    // horizontal brushed striations — many faint 1px lines with varied alpha
-    unsigned seed = 0x68000;
-    for (CGFloat y = NSMinY(r); y < NSMaxY(r); y += 1.0) {
-        seed = seed * 1103515245u + 12345u;          // cheap deterministic PRNG
-        CGFloat n = ((seed >> 16) & 0xFF) / 255.0;    // 0..1
-        CGFloat a = 0.04 + n * 0.06;
-        NSColor *c = (n < 0.5) ? [NSColor colorWithCalibratedWhite:1 alpha:a]
-                               : [NSColor colorWithCalibratedWhite:0 alpha:a*0.7];
-        [c setStroke];
-        NSBezierPath *ln = [NSBezierPath bezierPath];
-        ln.lineWidth = 1;
-        [ln moveToPoint:NSMakePoint(NSMinX(r), y + 0.5)];
-        [ln lineToPoint:NSMakePoint(NSMaxX(r), y + 0.5)];
-        [ln stroke];
-    }
-    [NSGraphicsContext restoreGraphicsState];
-
-    // soft top highlight
-    NSGradient *hl = [[NSGradient alloc] initWithStartingColor:[NSColor colorWithCalibratedWhite:1 alpha:0.35]
-                                                   endingColor:[NSColor colorWithCalibratedWhite:1 alpha:0.0]];
-    [hl drawInRect:NSMakeRect(NSMinX(r), NSMaxY(r)-40, NSWidth(r), 40) angle:-90];
-}
+- (void)drawBrushedAluminumIn:(NSRect)r { [E68BrushedView drawBrushedAluminumIn:r]; }
 
 - (void)drawPanel:(CGRect)r top:(NSColor *)t bottom:(NSColor *)b radius:(CGFloat)rad {
     NSBezierPath *p = [NSBezierPath bezierPathWithRoundedRect:r xRadius:rad yRadius:rad];

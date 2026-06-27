@@ -328,7 +328,7 @@ static BOOL lineIsInstruction(NSString *line) {
 - (NSAttributedString *)colorizeLine:(NSString *)line {
     static NSColor *cAddr, *cDim, *cSrc, *cCmt;
     if (!cAddr) {
-        cAddr = [NSColor colorWithCalibratedRed:0.30 green:0.62 blue:0.86 alpha:1.0]; // address
+        cAddr = [NSColor colorWithCalibratedRed:0.16 green:0.52 blue:1.0 alpha:1.0]; // address (vivid)
         cDim  = NSColor.tertiaryLabelColor;                                            // machine code / line #
         cSrc  = NSColor.labelColor;                                                    // source
         cCmt  = [NSColor colorWithCalibratedRed:0.36 green:0.62 blue:0.36 alpha:1.0]; // comment

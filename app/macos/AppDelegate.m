@@ -119,6 +119,24 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     [editMenu addItem:Item(@"Copy", @selector(copy:), @"c")];
     [editMenu addItem:Item(@"Paste", @selector(paste:), @"v")];
     [editMenu addItem:Item(@"Select All", @selector(selectAll:), @"a")];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    // Find submenu — native NSTextFinder actions (target = first responder)
+    NSMenuItem *findItem = [[NSMenuItem alloc] init];
+    findItem.title = @"Find";
+    NSMenu *findMenu = [[NSMenu alloc] initWithTitle:@"Find"];
+    findItem.submenu = findMenu;
+    NSMenuItem *(^FindItem)(NSString *, NSInteger, NSString *, NSEventModifierFlags) =
+        ^(NSString *t, NSInteger tag, NSString *key, NSEventModifierFlags mods) {
+            NSMenuItem *m = [[NSMenuItem alloc] initWithTitle:t action:@selector(performTextFinderAction:) keyEquivalent:key];
+            m.tag = tag; if (mods) m.keyEquivalentModifierMask = mods;
+            [findMenu addItem:m]; return m;
+        };
+    FindItem(@"Find…", 1 /*ShowFindInterface*/, @"f", 0);
+    FindItem(@"Find Next", 2 /*NextMatch*/, @"g", 0);
+    FindItem(@"Find Previous", 3 /*PreviousMatch*/, @"g", NSEventModifierFlagShift|NSEventModifierFlagCommand);
+    FindItem(@"Replace…", 12 /*ShowReplaceInterface*/, @"f", NSEventModifierFlagOption|NSEventModifierFlagCommand);
+    FindItem(@"Use Selection for Find", 7 /*SetSearchString*/, @"e", 0);
+    [editMenu addItem:findItem];
 
     // --- Build menu ---
     NSMenuItem *buildItem = [[NSMenuItem alloc] init];

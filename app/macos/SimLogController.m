@@ -15,6 +15,7 @@
 //
 #import "SimLogController.h"
 #import "E68Theme.h"
+#import "E68BrushedView.h"
 #import <stdio.h>
 
 // Execution-log globals in the sim core (globals.c). ElogFlag values:
@@ -52,6 +53,7 @@ extern unsigned int logMemAddr, logMemBytes;
     w.title = @"Execution Log";
     w.releasedWhenClosed = NO;
     self.window = w;
+    [E68BrushedView installInWindow:w];
     NSView *root = w.contentView;
 
     NSTextField *typeLbl = [NSTextField labelWithString:@"Execution Log Type"];
