@@ -5,8 +5,7 @@ A native **macOS** port of [EASy68K](http://www.easy68k.com/) — the Motorola
 Windows. The original Borland C++ Builder / VCL application has been rebuilt as a
 **C99 core** (assembler + CPU/simulator) driven by a hand-written **Cocoa**
 front end. The goal was a true **1:1 feature-complete** conversion — every
-window, dialog, menu and TRAP — and then to push past the original where the
-macOS toolbox lets us do better.
+window, dialog, menu and TRAP.
 
 ![EASy68K for macOS — editor, simulator and hardware simulator](screenshot.png)
 
