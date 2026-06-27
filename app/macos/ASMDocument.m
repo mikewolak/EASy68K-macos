@@ -194,10 +194,16 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
     self.resultsPlaceholder = ph;
 
     [split addSubview:resScroll];
-    // Position the divider once the split view has its real size.
+    // Position the divider once the split view has its real size. The results
+    // pane opens at the same height as the top toolbar (title+toolbar chrome
+    // minus the title bar); the user can drag it taller.
     dispatch_async(dispatch_get_main_queue(), ^{
-        // Results pane opens compact (~4 lines); the user can drag it taller.
-        [split setPosition:NSHeight(split.bounds) - 78 ofDividerAtIndex:0];
+        NSWindow *win = self.window;
+        CGFloat chrome   = NSHeight(win.frame) - NSHeight(((NSView *)win.contentView).frame);
+        CGFloat titleBar = NSHeight([NSWindow frameRectForContentRect:NSZeroRect styleMask:win.styleMask]);
+        CGFloat toolbarH = chrome - titleBar;
+        if (toolbarH < 30 || toolbarH > 120) toolbarH = 56;   // sanity fallback
+        [split setPosition:NSHeight(split.bounds) - toolbarH ofDividerAtIndex:0];
     });
 
     // --- Status bar ---
