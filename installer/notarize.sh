@@ -22,7 +22,13 @@
 
 set -euo pipefail
 
-NOTARY_PROFILE="${NOTARY_PROFILE:-rs-notary}"
+# Pull the notarytool keychain-profile name from signing.env (gitignored) so no
+# project-specific identifiers live in the repo. Falls back to a generic name.
+# Source via the script's own path so a relative ARTIFACT still resolves from
+# the caller's working directory.
+_ENV="$(cd "$(dirname "$0")/.." && pwd)/signing.env"
+[ -f "${_ENV}" ] && set -a && . "${_ENV}" && set +a
+NOTARY_PROFILE="${NOTARY_PROFILE:-AC_PASSWORD}"
 
 if [ $# -ne 1 ]; then
     echo "usage: $0 <path-to-pkg-or-dmg>" >&2
