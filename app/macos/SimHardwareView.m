@@ -116,6 +116,11 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 - (NSBox *)groupBox:(NSString *)title frame:(NSRect)f {
     NSBox *b = [[NSBox alloc] initWithFrame:f];
     b.title = title; b.titleFont = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
+    // translucent so the brushed-aluminum backdrop shows through
+    b.boxType = NSBoxCustom;
+    b.fillColor = [NSColor colorWithCalibratedWhite:1 alpha:0.10];
+    b.borderColor = [NSColor colorWithCalibratedWhite:0 alpha:0.30];
+    b.borderWidth = 1; b.cornerRadius = 6;
     [self addSubview:b];
     return b;
 }
@@ -219,10 +224,13 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 #pragma mark drawing — panels, LEDs, 7-segment digits
 
 - (void)drawRect:(NSRect)dirty {
+    // brushed-aluminum backdrop for the whole panel
+    [self drawBrushedAluminumIn:self.bounds];
+
     // Panel2 (7-seg, black with a soft inner glow)
     [self drawPanel:kPanel2 top:[NSColor colorWithWhite:0.10 alpha:1] bottom:NSColor.blackColor radius:6];
-    // Panel1 (LEDs, brushed gray)
-    [self drawPanel:kPanel1 top:[NSColor colorWithWhite:0.62 alpha:1] bottom:[NSColor colorWithWhite:0.46 alpha:1] radius:6];
+    // Panel1 (LEDs) — recessed dark metal so the LEDs pop on the aluminum
+    [self drawPanel:kPanel1 top:[NSColor colorWithWhite:0.30 alpha:1] bottom:[NSColor colorWithWhite:0.18 alpha:1] radius:6];
 
     // 7-segment displays inside Panel2: display d (0=left) -> memory[seg7loc+2d]
     for (int d = 0; d < 8; d++) {
@@ -237,6 +245,41 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
         CGFloat y = kPanel1.origin.y + 8;
         [self drawLED:((_ledVal >> b) & 1) inRect:NSMakeRect(x, y, 17, 17)];
     }
+}
+
+// A premium brushed-aluminum surface: a soft vertical sheen + fine horizontal
+// brush striations + a subtle top highlight.
+- (void)drawBrushedAluminumIn:(NSRect)r {
+    NSGradient *base = [[NSGradient alloc] initWithColorsAndLocations:
+        [NSColor colorWithCalibratedWhite:0.86 alpha:1], 0.0,
+        [NSColor colorWithCalibratedWhite:0.78 alpha:1], 0.45,
+        [NSColor colorWithCalibratedWhite:0.72 alpha:1], 0.55,
+        [NSColor colorWithCalibratedWhite:0.82 alpha:1], 1.0, nil];
+    [base drawInRect:r angle:-90];
+
+    [NSGraphicsContext saveGraphicsState];
+    NSRectClip(r);
+    // horizontal brushed striations — many faint 1px lines with varied alpha
+    unsigned seed = 0x68000;
+    for (CGFloat y = NSMinY(r); y < NSMaxY(r); y += 1.0) {
+        seed = seed * 1103515245u + 12345u;          // cheap deterministic PRNG
+        CGFloat n = ((seed >> 16) & 0xFF) / 255.0;    // 0..1
+        CGFloat a = 0.04 + n * 0.06;
+        NSColor *c = (n < 0.5) ? [NSColor colorWithCalibratedWhite:1 alpha:a]
+                               : [NSColor colorWithCalibratedWhite:0 alpha:a*0.7];
+        [c setStroke];
+        NSBezierPath *ln = [NSBezierPath bezierPath];
+        ln.lineWidth = 1;
+        [ln moveToPoint:NSMakePoint(NSMinX(r), y + 0.5)];
+        [ln lineToPoint:NSMakePoint(NSMaxX(r), y + 0.5)];
+        [ln stroke];
+    }
+    [NSGraphicsContext restoreGraphicsState];
+
+    // soft top highlight
+    NSGradient *hl = [[NSGradient alloc] initWithStartingColor:[NSColor colorWithCalibratedWhite:1 alpha:0.35]
+                                                   endingColor:[NSColor colorWithCalibratedWhite:1 alpha:0.0]];
+    [hl drawInRect:NSMakeRect(NSMinX(r), NSMaxY(r)-40, NSWidth(r), 40) angle:-90];
 }
 
 - (void)drawPanel:(CGRect)r top:(NSColor *)t bottom:(NSColor *)b radius:(CGFloat)rad {
