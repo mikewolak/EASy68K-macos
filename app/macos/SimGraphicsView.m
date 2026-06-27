@@ -87,12 +87,33 @@ static CGColorRef bgrColor(uint32_t c) {
 }
 
 - (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     if (_displayLink) { CVDisplayLinkStop(_displayLink); CVDisplayLinkRelease(_displayLink); }
     if (_frontImage) CGImageRelease(_frontImage);
 }
 
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
+
+// Fill the enclosing clip view so the canvas spans the whole window (and the
+// whole screen in full-screen); drawRect then aspect-scales the bitmap into it.
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+    NSView *clip = self.superview;
+    if (clip) {
+        clip.postsFrameChangedNotifications = YES;
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(fitToClip)
+                                                     name:NSViewFrameDidChangeNotification object:clip];
+        [self fitToClip];
+    }
+}
+- (void)fitToClip {
+    NSView *clip = self.superview;
+    if (clip && !NSEqualSizes(self.frame.size, clip.bounds.size)) {
+        [self setFrame:clip.bounds];
+        self.needsDisplay = YES;
+    }
+}
 
 - (void)rebuildContext {
     if (_ctx) { CGContextRelease(_ctx); _ctx = NULL; }
@@ -138,7 +159,7 @@ static CGColorRef bgrColor(uint32_t c) {
     [self rebuildContext];
     [_lock unlock];
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self setFrameSize:NSMakeSize(self->_w, self->_h)];
+        [self fitToClip];           // keep filling the window; drawRect aspect-scales
         self.needsDisplay = YES;
     });
 }
@@ -453,21 +474,36 @@ static int macCharToVK(unichar c) {
 }
 
 - (void)drawRect:(NSRect)dirty {
+    (void)dirty;
+    NSRect b = self.bounds;
     [_lock lock];
     CGImageRef img = _frontImage ? CGImageRetain(_frontImage) : NULL;
+    double cw = _w, ch = _h;
     [_lock unlock];
-    if (img) {
-        CGContextRef c = NSGraphicsContext.currentContext.CGContext;
-        // The view is flipped (top-left origin) for scroll/layout, but the
-        // bitmap's memory row 0 is the top scanline. Flip the CTM locally so
-        // the image blits upright instead of mirrored vertically.
-        CGContextSaveGState(c);
-        CGContextTranslateCTM(c, 0, _h);
-        CGContextScaleCTM(c, 1, -1);
-        CGContextDrawImage(c, CGRectMake(0, 0, _w, _h), img);
-        CGContextRestoreGState(c);
-        CGImageRelease(img);
-    }
+
+    // Black letterbox/pillarbox fill behind the (aspect-scaled) canvas.
+    [[NSColor blackColor] setFill];
+    NSRectFill(b);
+    if (!img) return;
+
+    CGContextRef c = NSGraphicsContext.currentContext.CGContext;
+    // Scale the canvas to the largest size that fits the view while keeping its
+    // exact aspect ratio, then centre it (so full-screen pillar/letter-boxes).
+    double scale = MIN(b.size.width / cw, b.size.height / ch);
+    if (scale <= 0) scale = 1;
+    double dw = cw * scale, dh = ch * scale;
+    double ox = (b.size.width  - dw) * 0.5;
+    double oy = (b.size.height - dh) * 0.5;
+
+    // The view is flipped (top-left origin) but the bitmap's row 0 is the top
+    // scanline; flip the CTM within the destination rect so it blits upright.
+    CGContextSaveGState(c);
+    CGContextSetInterpolationQuality(c, kCGInterpolationNone);   // crisp pixels
+    CGContextTranslateCTM(c, ox, oy + dh);
+    CGContextScaleCTM(c, 1, -1);
+    CGContextDrawImage(c, CGRectMake(0, 0, dw, dh), img);
+    CGContextRestoreGState(c);
+    CGImageRelease(img);
 }
 
 @end
