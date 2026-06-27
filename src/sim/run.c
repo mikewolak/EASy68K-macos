@@ -769,13 +769,17 @@ int exec_inst()
       {
         if( (exec_result == BAD_INST) || ((inst & ~inst_arr[i].mask) == inst_arr[i].val) )
         {
-          if (trace) {
+          // Build the instruction text + (optionally) update the trace display
+          // when tracing, AND write the execution log when logging is enabled —
+          // the log must work during a free run, not only in trace/step mode.
+          if (trace || logging) {
             mem_req (PC, (int32_t) WORD_MASK, &temp);
             if(inst == 0xFFFF && temp == 0xFFFF)  // if SIMHALT command
               sprintf(buffer,"PC=%08X  Code=%04X  SIMHALT", PC-2, inst);
             else
               sprintf(buffer,"PC=%08X  Code=%04X  %s", PC-2, inst, inst_arr[i].name);
-            simMessage(buffer);
+            if (trace)
+              simMessage(buffer);
 
             if (logging)
             {

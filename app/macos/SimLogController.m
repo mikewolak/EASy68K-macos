@@ -47,7 +47,7 @@ extern unsigned int logMemAddr, logMemBytes;
 
 - (void)buildIfNeeded {
     if (self.window) return;
-    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,560,460)
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,640,460)
         styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable)
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"Execution Log";
@@ -107,6 +107,8 @@ extern unsigned int logMemAddr, logMemBytes;
         [_memBytes.widthAnchor constraintEqualToConstant:54],
 
         [saveBtn.centerYAnchor constraintEqualToAnchor:addrLbl.centerYAnchor],
+        // keep Save clear of the bytes field on its left
+        [saveBtn.leadingAnchor constraintGreaterThanOrEqualToAnchor:_memBytes.trailingAnchor constant:14],
         [saveBtn.trailingAnchor constraintEqualToAnchor:_startBtn.leadingAnchor constant:-8],
         [_startBtn.centerYAnchor constraintEqualToAnchor:addrLbl.centerYAnchor],
         [_startBtn.trailingAnchor constraintEqualToAnchor:_stopBtn.leadingAnchor constant:-8],

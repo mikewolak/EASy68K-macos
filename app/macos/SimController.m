@@ -60,6 +60,7 @@ static NSToolbarItemIdentifier const kLog       = @"sim.log";
 @property (nonatomic, strong) NSWindow *hwWindow;         // Hardware window
 @property (nonatomic, strong) SimHardwareView *hwView;
 @property (nonatomic, strong) NSTimer *autoTraceTimer;     // AutoTrace animation
+@property (nonatomic, strong) NSTimer *runRefreshTimer;    // live UI refresh during a free run
 @property (nonatomic) int autoTraceMs;                     // AutoTrace interval (ms)
 @property (nonatomic) BOOL autoTraceDisableDisplay;        // skip display refresh
 @property (nonatomic, strong) NSTextView *memoryView;
@@ -571,10 +572,29 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     trace = tr; sstep = ss; halt = false; stopInstruction = false;
     if (ss) stepToAddr = 0;
     runMode = true;
+
+    // During a free run the sim spins on the background queue and the core only
+    // calls updateDisplay on stop — so registers, memory, the listing and any
+    // Live memory windows would stay frozen until halt. Drive a periodic refresh
+    // from the main thread while the run is live (NSRunLoopCommonModes so it keeps
+    // ticking through menu tracking / button holds). AutoTrace/Step refresh per
+    // step already, so only the free run needs this.
+    if (!tr) {
+        [self.runRefreshTimer invalidate];
+        __weak SimController *weak = self;
+        self.runRefreshTimer = [NSTimer timerWithTimeInterval:1.0/20.0 repeats:YES block:^(NSTimer *t) {
+            SimController *s = weak;
+            if (!s || !s.running) { [t invalidate]; return; }
+            [s refreshState];
+        }];
+        [[NSRunLoop mainRunLoop] addTimer:self.runRefreshTimer forMode:NSRunLoopCommonModes];
+    }
+
     dispatch_async(self.simQueue, ^{
         while (runMode && !halt) runprog();
         dispatch_async(dispatch_get_main_queue(), ^{
             self.running = NO;
+            [self.runRefreshTimer invalidate]; self.runRefreshTimer = nil;
             [self refreshState];
             BOOL atBP = [self.listingView hasBreakpointAtAddress:(uint32_t)PC];
             NSString *v = atBP ? @"Breakpoint" : (verb ?: @"Halted");

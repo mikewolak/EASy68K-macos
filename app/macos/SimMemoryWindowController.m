@@ -28,13 +28,18 @@ static NSHashTable<SimMemoryWindowController *> *gWindows;
 @property (nonatomic) uint32_t selFrom, selTo;// highlighted range (From..To)
 @end
 
+@interface SimMemoryHeaderView : NSView @end  // column header, aligned to the dump
+
 @implementation SimMemoryWindowController {
     SimMemoryHexView *_hex;
     NSTextField      *_addr, *_from, *_to, *_bytes;
     NSStepper        *_rowStep, *_pageStep;
     NSButton         *_live;
+    NSTimer          *_liveTimer;
     uint32_t          _base;
 }
+
+- (void)dealloc { [_liveTimer invalidate]; }
 
 + (void)initialize { if (!gWindows) gWindows = [NSHashTable weakObjectsHashTable]; }
 
@@ -56,6 +61,24 @@ static NSHashTable<SimMemoryWindowController *> *gWindows;
 + (void)refreshLiveWindows {
     for (SimMemoryWindowController *c in gWindows.allObjects)
         if (c->_live.state == NSControlStateValueOn) [c refresh];
+}
+
+// Live mode drives its own timer: refreshState/cbUpdate only fires on step/stop,
+// so a continuous Run would otherwise leave a "Live" window frozen. The timer
+// reads memory directly at ~15 Hz while the box is checked and the window shows.
+- (void)liveToggled:(NSButton *)b {
+    [self refresh];
+    if (_live.state == NSControlStateValueOn && !_liveTimer) {
+        __weak SimMemoryWindowController *weak = self;
+        _liveTimer = [NSTimer timerWithTimeInterval:1.0/15.0 repeats:YES block:^(NSTimer *t) {
+            SimMemoryWindowController *s = weak;
+            if (!s) { [t invalidate]; return; }
+            if (s->_live.state == NSControlStateValueOn && s.window.isVisible) [s refresh];
+        }];
+        [[NSRunLoop currentRunLoop] addTimer:_liveTimer forMode:NSRunLoopCommonModes];
+    } else if (_live.state != NSControlStateValueOn && _liveTimer) {
+        [_liveTimer invalidate]; _liveTimer = nil;
+    }
 }
 
 - (void)build {
@@ -100,11 +123,9 @@ static NSHashTable<SimMemoryWindowController *> *gWindows;
         [bar addSubview:b];
     }
 
-    // column header row: "ADDRESS   00 01 .. 0F   0123..F"
-    NSTextField *hdr = [NSTextField labelWithString:
-        @"          00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F  0123456789ABCDEF"];
-    hdr.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightSemibold];
-    hdr.textColor = NSColor.secondaryLabelColor;
+    // column header row, drawn with the SAME font/x-origin/spacing as the data
+    // rows so the byte columns and the ASCII header line up exactly.
+    SimMemoryHeaderView *hdr = [[SimMemoryHeaderView alloc] initWithFrame:NSZeroRect];
     hdr.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:hdr];
 
@@ -130,7 +151,7 @@ static NSHashTable<SimMemoryWindowController *> *gWindows;
     _pageStep.target = self; _pageStep.action = @selector(pageSpin:);
     _pageStep.translatesAutoresizingMaskIntoConstraints = NO; [root addSubview:_pageStep];
 
-    _live = [NSButton checkboxWithTitle:@"Live" target:self action:@selector(refresh)];
+    _live = [NSButton checkboxWithTitle:@"Live" target:self action:@selector(liveToggled:)];
     _live.font = [NSFont systemFontOfSize:11];
     _live.translatesAutoresizingMaskIntoConstraints = NO; [root addSubview:_live];
 
@@ -167,8 +188,10 @@ static NSHashTable<SimMemoryWindowController *> *gWindows;
         [copy.trailingAnchor constraintEqualToAnchor:fill.leadingAnchor constant:-6],
         [copy.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor],
 
-        [hdr.topAnchor constraintEqualToAnchor:bar.bottomAnchor constant:2],
+        [hdr.topAnchor constraintEqualToAnchor:bar.bottomAnchor constant:4],
         [hdr.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:8],
+        [hdr.trailingAnchor constraintEqualToAnchor:rowLbl.leadingAnchor constant:-6],
+        [hdr.heightAnchor constraintEqualToConstant:16],
 
         [_hex.topAnchor constraintEqualToAnchor:hdr.bottomAnchor constant:2],
         [_hex.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:8],
@@ -333,6 +356,26 @@ static NSHashTable<SimMemoryWindowController *> *gWindows;
         [line drawAtPoint:NSMakePoint(4, y)];
         y += rowH;
     }
+}
+
+@end
+
+@implementation SimMemoryHeaderView
+
+- (BOOL)isFlipped { return YES; }
+
+- (void)drawRect:(NSRect)dirty {
+    [NSColor.textBackgroundColor setFill];
+    NSRectFill(self.bounds);
+    // Mirror a data row's layout EXACTLY: "%06X  " address (8 cols) + 16×"%02X "
+    // + " " separator + 16 ASCII chars, same font + x-origin as SimMemoryHexView.
+    NSFont *font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightSemibold];
+    NSMutableString *s = [@"        " mutableCopy];        // 8 spaces under the address
+    for (int c = 0; c < 16; c++) [s appendFormat:@"%02X ", c];
+    [s appendString:@" 0123456789ABCDEF"];
+    [[[NSAttributedString alloc] initWithString:s attributes:@{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: NSColor.secondaryLabelColor }] drawAtPoint:NSMakePoint(4, 0)];
 }
 
 @end
