@@ -27,6 +27,7 @@
 #include "SimLogBridge.h"     // pretty-prints .L68 source lines into the log
 #include "SimHwBridge.h"      // memory-mapped LEDs/7-seg/switches Hardware window
 #include "SimSoundBridge.h"   // low-latency ring-buffer audio for TRAP sound tasks
+#include "net.h"              // BSD-socket networking for TRAP net tasks (100-107)
 
 extern int PC;               // current program counter (globals.c, int32_t)
 
@@ -95,14 +96,41 @@ static void io_initComm(int c,char*p,short*r){(void)c;(void)p; if(r)*r=0;}
 static void io_setCommParams(int c,int s,short*r){(void)c;(void)s; if(r)*r=0;}
 static void io_readComm(int c,uchar*n,char*s,short*r){(void)c;(void)n;(void)s; if(r)*r=0;}
 static void io_sendComm(int c,uchar*n,char*s,short*r){(void)c;(void)n;(void)s; if(r)*r=0;}
-static void io_createNetClient(int s,char*sv,int*r){(void)s;(void)sv; if(r)*r=0;}
-static void io_createNetServer(int s,int*r){(void)s; if(r)*r=0;}
-static void io_sendNet(int s,char*d,char*ip,int*c,int*r){(void)s;(void)d;(void)ip; if(c)*c=0; if(r)*r=0;}
-static void io_receiveNet(int s,char*b,int*c,char*ip,int*r){(void)s;(void)b;(void)ip; if(c)*c=0; if(r)*r=0;}
-static void io_sendPortNet(int32_t*d0,int32_t*d1,char*d,char*ip){(void)d0;(void)d1;(void)d;(void)ip;}
-static void io_receivePortNet(int32_t*d0,int32_t*d1,char*b,char*ip){(void)d0;(void)d1;(void)b;(void)ip;}
-static void io_closeNetConnection(int c,int*r){(void)c; if(r)*r=0;}
-static void io_getLocalIP(char*ip,int*r){ if(ip) ip[0]='\0'; if(r)*r=0; }
+// Networking (TRAP #15 tasks 100-107) -> BSD-socket net.c. The `settings`
+// word packs the connection type (low byte) and port (high word); send/recv
+// pack the byte count (low word).
+static void io_createNetClient(int s,char*sv,int*r){
+    int type=s&0xFF, port=(s>>16)&0xFFFF;
+    if(r)*r=netCreateClient(sv,port,type);
+}
+static void io_createNetServer(int s,int*r){
+    int type=s&0xFF, port=(s>>16)&0xFFFF;
+    if(r)*r=netCreateServer(port,type);
+}
+static void io_sendNet(int s,char*d,char*ip,int*c,int*r){
+    unsigned int size=(unsigned int)(s&0xFFFF);
+    int res=netSendData(d,&size,ip);
+    if(r)*r=res; if(c&&res==NET_OK)*c=(int)size;
+}
+static void io_receiveNet(int s,char*b,int*c,char*ip,int*r){
+    unsigned int size=(unsigned int)(s&0xFFFF);
+    int res=netReadData(b,&size,ip);
+    if(r)*r=res; if(c&&res==NET_OK)*c=(int)size;
+}
+static void io_sendPortNet(int32_t*d0,int32_t*d1,char*d,char*ip){
+    unsigned int size=(unsigned int)(*d1&0xFFFF);
+    unsigned short port=(unsigned short)((*d1>>16)&0xFFFF);
+    *d0=netSendDataPort(d,&size,ip,port);
+    if(*d0==NET_OK)*d1=(int32_t)size;
+}
+static void io_receivePortNet(int32_t*d0,int32_t*d1,char*b,char*ip){
+    unsigned int size=(unsigned int)(*d1&0xFFFF);
+    unsigned short port=0;
+    *d0=netReadDataPort(b,&size,ip,&port);
+    if(*d0==NET_OK)*d1=((int32_t)port<<16)|((int32_t)size&0xFFFF);
+}
+static void io_closeNetConnection(int c,int*r){(void)c; if(r)*r=netCloseSockets();}
+static void io_getLocalIP(char*ip,int*r){ int res=netLocalIP(ip); if(r)*r=res; }
 static void io_displayFileDialog(int32_t*m,int a1,int a2,int a3,short*r){(void)m;(void)a1;(void)a2;(void)a3; if(r)*r=0;}
 
 static SimIODevice cocoa_io = {

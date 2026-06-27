@@ -33,11 +33,12 @@ ARFLAGS := rcs
 # ---- source groups ---------------------------------------------------
 COMMON_SRC := $(wildcard src/common/*.c)
 ASM_SRC    := $(wildcard src/asm/*.c)
-# net.c is the Winsock networking device; it lives in the host GUI layer.
-SIM_SRC    := $(filter-out src/sim/net.c,$(wildcard src/sim/*.c))
+# net.c is the BSD-socket networking device (TRAP net tasks); net_stub.c is the
+# placeholder it replaces, so build net.c and exclude the stub.
+SIM_SRC    := $(filter-out src/sim/net_stub.c,$(wildcard src/sim/*.c))
 # Sim core WITHOUT the CLI host (simhost_cli.c): the Cocoa app supplies its
 # own host (SimBridge), so it links these objects directly.
-SIM_CORE_SRC := $(filter-out src/sim/net.c src/sim/simhost_cli.c,$(wildcard src/sim/*.c))
+SIM_CORE_SRC := $(filter-out src/sim/net_stub.c src/sim/simhost_cli.c,$(wildcard src/sim/*.c))
 
 COMMON_OBJ := $(patsubst src/%.c,$(OBJDIR)/%.o,$(COMMON_SRC))
 ASM_OBJ    := $(patsubst src/%.c,$(OBJDIR)/%.o,$(ASM_SRC))

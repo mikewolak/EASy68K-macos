@@ -1,526 +1,331 @@
 //---------------------------------------------------------------------------
-//   Author: Chuck Kelly,
-//           Monroe County Community College
-//           http://www.monroeccc.edu/ckelly
+//   macOS C99 port (BSD sockets) of the original Winsock Net.cpp.
+//   Original author: Chuck Kelly, Monroe County Community College.
+//
+//   The TRAP #15 networking tasks (100-107) drive these. Winsock maps almost
+//   1:1 onto BSD sockets: SOCKET->int, INVALID_SOCKET/SOCKET_ERROR->-1,
+//   closesocket->close, ioctlsocket(FIONBIO)->fcntl(O_NONBLOCK),
+//   WSAGetLastError->errno, WSAE*->E*. Sockets are non-blocking, so the 68K
+//   program polls receive until data arrives.
 //---------------------------------------------------------------------------
 
 #include "net.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 
-// Network
-DWORD        dwLength = 4096;           // Length of send and receive buffers
-WSADATA      wsd;
-SOCKET       sock = NULL;
-char         *recvbuf;
-char         *sendbuf;
-int          ret = 0;
-DWORD        remoteAddrSize = 0;
-SOCKADDR_IN  remote, local;
-bool         netInitialized = false;
-bool         bound = false;
-char         mode = UNINITIALIZED;
-int          type = UNCONNECTED;
-USHORT       port = 40000;
+static int                sock = -1;
+static int                ret = 0;
+static struct sockaddr_in remote, local;
+static int                netInitialized = 0;
+static int                bound = 0;
+static char               mode = UNINITIALIZED;
+static int                type = UNCONNECTED;
+
+static int setNonBlocking(int s) {
+  int fl = fcntl(s, F_GETFL, 0);
+  if (fl < 0) return -1;
+  return fcntl(s, F_SETFL, fl | O_NONBLOCK);
+}
 
 //---------------------------------------------------------------------------
-// Initialize network
-// protocol = UDP or TCP
-// Pre:
-//   port = Port number.
-//   protocol = UDP or TCP.
-// Post:
-//   Returns two part int code on error.
-//     The low 16 bits contains Status code as defined in net.h.
-//     The high 16 bits contains "Windows Socket Error Code".
-
-int __fastcall netInit(int port, int protocol)
+// Initialize network. protocol = UDP or TCP, port = local/remote port.
+int netInit(int port, int protocol)
 {
-  uint32_t ul = 1;
-  int           nRet;
-  int status;
-
-  if(netInitialized)            // if network currently initialized
-    netCloseSockets();          // close current network and start over
-
+  if (netInitialized)            // currently initialized -> close and start over
+    netCloseSockets();
   mode = UNINITIALIZED;
 
-  status = WSAStartup(0x0101, &wsd);    // Winsock 1.1
-  if (status != 0)
-    return ( (status << 16) + NET_INIT_FAILED);
-
-  switch (protocol)
-  {
-    case UDP:     // UDP
-      // Create UDP socket and bind it to a local interface and port
+  switch (protocol) {
+    case UDP:
       sock = socket(AF_INET, SOCK_DGRAM, 0);
-      if (sock == INVALID_SOCKET) {
-        WSACleanup();
-        status = WSAGetLastError();          // get detailed error
-        return ( (status << 16) + NET_INVALID_SOCKET);
-      }
+      if (sock < 0) return ((errno << 16) + NET_INVALID_SOCKET);
       type = UDP;
       break;
-    case TCP:     // TCP
-      // Create TCP socket and bind it to a local interface and port
+    case TCP:
       sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-      if (sock == INVALID_SOCKET) {
-        WSACleanup();
-        status = WSAGetLastError();          // get detailed error
-        return ( (status << 16) + NET_INVALID_SOCKET);
-      }
+      if (sock < 0) return ((errno << 16) + NET_INVALID_SOCKET);
       type = UNCONNECTED_TCP;
       break;
-    default:    // Invalid type
-      return (NET_INIT_FAILED);
+    default:
+      return NET_INIT_FAILED;
   }
 
-  // put socket in non-blocking mode
-  nRet = ioctlsocket(sock, FIONBIO, (uint32_t *) &ul);
-  if (nRet == SOCKET_ERROR) {
-    WSACleanup();
-    status = WSAGetLastError();         // get detailed error
-    return ( (status << 16) + NET_INVALID_SOCKET);
-  }
+  if (setNonBlocking(sock) < 0)
+    return ((errno << 16) + NET_INVALID_SOCKET);
 
-  // set local family and port
-  local.sin_family = AF_INET;
-  local.sin_port = htons((u_short)port);        // port number
-
-  // set remote family and port
+  memset(&local, 0, sizeof(local));
+  memset(&remote, 0, sizeof(remote));
+  local.sin_family  = AF_INET;
+  local.sin_port    = htons((unsigned short)port);
   remote.sin_family = AF_INET;
-  remote.sin_port = htons((u_short)port);       // port number
+  remote.sin_port   = htons((unsigned short)port);
 
-  // Allocate the receive buffer
-  recvbuf = (char *)GlobalAlloc(GMEM_FIXED, dwLength);
-  if (!recvbuf)
-    return NET_INIT_FAILED;
-
-  // Allocate the send buffer
-  sendbuf = (char *)GlobalAlloc(GMEM_FIXED, dwLength);
-  if (!sendbuf)
-    return NET_INIT_FAILED;
-
-  netInitialized = true;
+  netInitialized = 1;
   return NET_OK;
 }
 
 //---------------------------------------------------------------------------
-// Setup network for use as server
-// May not be configured as Server and Client at the same time.
-// Pre:
-//   port = Port number to listen on.
-//     Port numbers 0-1023 are used for well-known services.
-//     Port numbers 1024-65535 may be freely used.
-//   protocol = UDP or TCP
-// Post:
-//   Returns NET_OK on success
-//   Returns two part int code on error.
-//     The low 16 bits contains Status code as defined in net.h.
-//     The high 16 bits contains "Windows Socket Error Code".
+// Setup network as a server (bind; TCP listens later in netReadData).
+int netCreateServer(int port, int protocol)
+{
+  int status = netInit(port, protocol);
+  if (status != NET_OK)
+    return status;
 
-int __fastcall netCreateServer(int port, int protocol) {
+  local.sin_addr.s_addr = htonl(INADDR_ANY);     // listen on all addresses
+  if (bind(sock, (struct sockaddr *)&local, sizeof(local)) < 0)
+    return ((errno << 16) + NET_BIND_FAILED);
 
-  int status;
+  bound = 1;
+  mode  = SERVER;
+  return NET_OK;
+}
 
-  // ----- Initialize network stuff -----
+//---------------------------------------------------------------------------
+// Setup network as a client. *server = dotted-quad IP or hostname; on a
+// hostname it is rewritten to the resolved dotted-quad.
+int netCreateClient(char *server, int port, int protocol)
+{
+  int status, timeout = 5000;       // try to connect for ~5 s
+  char localIP[16] = "127.0.0.1";
+  struct hostent *host;
+
   status = netInit(port, protocol);
   if (status != NET_OK)
     return status;
 
-  local.sin_addr.s_addr = htonl(INADDR_ANY);    // listen on all addresses
-
-  // bind socket
-  if (bind(sock, (SOCKADDR *)&local, sizeof(local)) == SOCKET_ERROR)
-  {
-    status = WSAGetLastError();          // get detailed error
-    return ((status << 16) + NET_BIND_FAILED);
-  }
-  bound = true;
-  mode = SERVER;
-
-  return NET_OK;
-}
-
-//------------------------------------------------------------------------
-// Setup network for use as a client
-// Pre: 
-//   *server = IP address of server to connect to as null terminated
-//     string (e.g. "192.168.1.100") or null terminated hostname
-//     (e.g. "www.programming2dgames.com").
-//   port = Port number. Port numbers 0-1023 are used for well-known services.
-//     Port numbers 1024-65535 may be freely used.
-//   protocol = UDP or TCP
-// Post:
-//   Returns NET_OK on success
-//   Returns two part int code on error.
-//     The low 16 bits contains Status code as defined in net.h.
-//     The high 16 bits contains "Windows Socket Error Code".
-//   *server = IP address connected to as null terminated string.
-
-int __fastcall netCreateClient(char *server, int port, int protocol) {
-
-    int status;
-    int timeout = 5000;         // attempt to connect for 5 seconds before returnning an error
-    char serverIP[16] = "255.255.255.255";
-    char localIP[16] =  "255.255.255.255";
-    hostent* host;
-
-    // ----- Initialize network stuff -----
-    status = netInit(port, protocol);
-    if (status != NET_OK)
-        return status;
-
-  // if server does not contain a dotted quad IP address nnn.nnn.nnn.nnn
-  if ((remote.sin_addr.s_addr = inet_addr(server)) == INADDR_NONE) {
+  // resolve a hostname if `server` is not a dotted-quad
+  remote.sin_addr.s_addr = inet_addr(server);
+  if (remote.sin_addr.s_addr == INADDR_NONE) {
     host = gethostbyname(server);
-    if(host == NULL)                    // if gethostbyname failed
+    if (host == NULL)
       return NET_DOMAIN_NOT_FOUND;
-
-    // set serverIP to IP address as string "aaa.bbb.ccc.ddd"
-    sprintf(serverIP, "%d.%d.%d.%d",
-          (unsigned char)host->h_addr_list[0][0],
-          (unsigned char)host->h_addr_list[0][1],
-          (unsigned char)host->h_addr_list[0][2],
-          (unsigned char)host->h_addr_list[0][3]);
-    remote.sin_addr.s_addr = inet_addr(serverIP);
-    strncpy(server, inet_ntoa(remote.sin_addr), 16);  // return IP of server
+    memcpy(&remote.sin_addr, host->h_addr_list[0], (size_t)host->h_length);
+    strncpy(server, inet_ntoa(remote.sin_addr), 16);   // return resolved IP
   }
 
-    // set local IP address
-    netLocalIP(localIP);          // get local IP
-    local.sin_addr.s_addr = inet_addr(localIP);   // local IP
+  netLocalIP(localIP);
+  local.sin_addr.s_addr = inet_addr(localIP);
+  mode = CLIENT;
 
-    mode = CLIENT;
-
-    // attempt to connect to server
-    while(type == UNCONNECTED_TCP && timeout > 0)
-    {
-        ret = connect(sock,(SOCKADDR*)(&remote),sizeof(remote));
-        if (ret == SOCKET_ERROR) {
-            status = WSAGetLastError();
-            if (status == WSAEISCONN)   // if connected
-            {
-                ret = 0;          // clear SOCKET_ERROR
-                type = CONNECTED_TCP;
-            }
-            else
-            {
-                if ( status == WSAEWOULDBLOCK || status == WSAEALREADY)
-                {
-                    Sleep(500); // wait 500 milli-seconds before next attempt
-                    timeout -= 500;
-                }
-                else
-                    return ((status << 16) + NET_ERROR);
-            }
-        }
+  // non-blocking connect for TCP: first attempt -> EINPROGRESS, then EALREADY,
+  // finally EISCONN when established (UDP skips this entirely)
+  while (type == UNCONNECTED_TCP && timeout > 0) {
+    ret = connect(sock, (struct sockaddr *)&remote, sizeof(remote));
+    if (ret < 0) {
+      int e = errno;
+      if (e == EISCONN) { ret = 0; type = CONNECTED_TCP; }
+      else if (e == EWOULDBLOCK || e == EAGAIN || e == EALREADY || e == EINPROGRESS) {
+        usleep(500 * 1000);          // wait 500 ms before the next attempt
+        timeout -= 500;
+      } else
+        return ((e << 16) + NET_ERROR);
+    } else {
+      type = CONNECTED_TCP;          // connected immediately
     }
-    return NET_OK;
-}
-
-//-------------------------------------------------------------------------
-// Send data to remoteIP
-// Pre:
-//   *data = Data to send
-//   size = Number of bytes to send
-//   if SERVER
-//     *remoteIP = Destination IP address as null terminated char array
-// Post:
-//   Returns NET_OK on success. Success does not indicate data was sent.
-//   Returns two part int code on error.
-//     The low 16 bits contains Status code as defined in net.h.
-//     The high 16 bits contains "Windows Socket Error Code".
-//   size = Number of bytes sent, 0 if no data sent.
-//
-int __fastcall netSendData(char *data, unsigned int &size, char *remoteIP) {
-    int status;
-    int sendSize = size;
-    size = 0;       // assume 0 bytes sent, changed if send successful
-
-    if (mode == SERVER)
-    {
-        remote.sin_addr.s_addr = inet_addr(remoteIP);
-    }
-
-    if(mode == CLIENT && type == UNCONNECTED_TCP)
-    {
-        ret = connect(sock,(SOCKADDR*)(&remote),sizeof(remote));
-        if (ret == SOCKET_ERROR) {
-            status = WSAGetLastError();
-            if (status == WSAEISCONN)   // if connected
-            {
-                ret = 0;          // clear SOCKET_ERROR
-                type = CONNECTED_TCP;
-            }
-            else
-            {
-                if ( status == WSAEWOULDBLOCK || status == WSAEALREADY)
-                    return NET_OK;  // no connection yet
-                else
-                    return ((status << 16) + NET_ERROR);
-            }
-        }
-    }
-
-    ret = sendto(sock, data, sendSize, 0, (SOCKADDR *)&remote, sizeof(remote));
-    if (ret == SOCKET_ERROR)
-    {
-        status = WSAGetLastError();
-        return ((status << 16) + NET_ERROR);
-    }
-    bound = true;         // automatic binding by sendto if unbound
-    size = ret;           // number of bytes sent, may be 0
-    return NET_OK;
-}
-
-//-------------------------------------------------------------------------
-// Send data to remoteIP and port
-// Pre:
-//   *data = Data to send
-//   size = Number of bytes to send
-//   if SERVER
-//     *remoteIP = Destination IP address as null terminated char array
-//     port = Destination port number.
-// Post:
-//   Returns NET_OK on success. Success does not indicate data was sent.
-//   Returns two part int code on error.
-//     The low 16 bits contains Status code as defined in net.h.
-//     The high 16 bits contains "Windows Socket Error Code".
-//   size = Number of bytes sent, 0 if no data sent.
-//
-int __fastcall netSendData(char *data, unsigned int &size, char *remoteIP, const USHORT port) {
-    int status;
-    int sendSize = size;
-    size = 0;       // assume 0 bytes sent, changed if send successful
-
-    if (mode == SERVER)
-    {
-        remote.sin_addr.s_addr = inet_addr(remoteIP);
-        remote.sin_port = port;
-    }
-
-    if(mode == CLIENT && type == UNCONNECTED_TCP)
-    {
-        ret = connect(sock,(SOCKADDR*)(&remote),sizeof(remote));
-        if (ret == SOCKET_ERROR) {
-            status = WSAGetLastError();
-            if (status == WSAEISCONN)   // if connected
-            {
-                ret = 0;          // clear SOCKET_ERROR
-                type = CONNECTED_TCP;
-            }
-            else
-            {
-                if ( status == WSAEWOULDBLOCK || status == WSAEALREADY)
-                    return NET_OK;  // no connection yet
-                else
-                    return ((status << 16) + NET_ERROR);
-            }
-        }
-    }
-
-    ret = sendto(sock, data, sendSize, 0, (SOCKADDR *)&remote, sizeof(remote));
-    if (ret == SOCKET_ERROR)
-    {
-        status = WSAGetLastError();
-        return ((status << 16) + NET_ERROR);
-    }
-    bound = true;         // automatic binding by sendto if unbound
-    size = ret;           // number of bytes sent, may be 0
-    return NET_OK;
+  }
+  return NET_OK;
 }
 
 //---------------------------------------------------------------------------
-// Read data, return sender's IP
-// Pre:
-//   *data = Buffer for received data.
-//   size = Number of bytes to receive.
-//   *senderIP = NULL
-// Post:
-//   Returns NET_OK on success.
-//   Returns two part int code on error.
-//     The low 16 bits contains Status code as defined in net.h.
-//     The high 16 bits contains "Windows Socket Error Code".
-//   size = Number of bytes received, may be 0.
-//   *senderIP = IP address of sender as null terminated string.
-int __fastcall netReadData(char *data, unsigned int &size, char *senderIP)
+// Send data to remote. Returns NET_OK; *size = bytes actually sent (may be 0).
+int netSendData(char *data, unsigned int *size, char *remoteIP)
 {
-    int status;
-    int readSize = size;
+  int sendSize = (int)*size;
+  *size = 0;
 
-    size = 0;           // assume 0 bytes read, changed if read successful
-    if(bound == false)  // no receive from unbound socket
-        return NET_OK;
+  if (mode == SERVER)
+    remote.sin_addr.s_addr = inet_addr(remoteIP);
 
-    if(mode == SERVER && type == UNCONNECTED_TCP)
-    {
-        ret = listen(sock,1);
-        if (ret == SOCKET_ERROR)
-        {
-            status = WSAGetLastError();
-            return ((status << 16) + NET_ERROR);
-        }
-        SOCKET tempSock;
-        tempSock = accept(sock,NULL,NULL);
-        if (tempSock == INVALID_SOCKET)
-        {
-            status = WSAGetLastError();
-            if ( status != WSAEWOULDBLOCK)  // don't report WOULDBLOCK error
-                return ((status << 16) + NET_ERROR);
-            return NET_OK;      // no connection yet
-        }
-        closesocket(sock);      // don't need old socket
-        sock = tempSock;        // TCP client connected
-        type = CONNECTED_TCP;
+  if (mode == CLIENT && type == UNCONNECTED_TCP) {
+    ret = connect(sock, (struct sockaddr *)&remote, sizeof(remote));
+    if (ret < 0) {
+      int e = errno;
+      if (e == EISCONN) { ret = 0; type = CONNECTED_TCP; }
+      else if (e == EWOULDBLOCK || e == EAGAIN || e == EALREADY || e == EINPROGRESS)
+        return NET_OK;               // not connected yet
+      else
+        return ((e << 16) + NET_ERROR);
+    } else {
+      type = CONNECTED_TCP;
     }
+  }
 
-    if(mode == CLIENT && type == UNCONNECTED_TCP)
-        return NET_OK;  // no connection yet
-
-    if(sock != NULL)
-    {
-        remoteAddrSize = sizeof(remote);
-        ret = recvfrom(sock, data, readSize, 0, (SOCKADDR *)&remote, (int *)&remoteAddrSize);
-        if (ret == SOCKET_ERROR) {
-            status = WSAGetLastError();
-            if ( status != WSAEWOULDBLOCK)  // don't report WOULDBLOCK error
-                return ((status << 16) + NET_ERROR);
-            ret = 0;            // clear SOCKET_ERROR
-        // if TCP connection did graceful close
-        } else if(ret == 0 && type == CONNECTED_TCP)
-            // return Remote Disconnect error
-            return ((REMOTE_DISCONNECT << 16) + NET_ERROR);
-        if (ret)
-        {
-            //IP of sender
-            strncpy(senderIP, inet_ntoa(remote.sin_addr), IP_SIZE);
-        }
-        size = ret;           // number of bytes read, may be 0
-    }
-    return NET_OK;
+  ret = sendto(sock, data, sendSize, 0, (struct sockaddr *)&remote, sizeof(remote));
+  if (ret < 0)
+    return ((errno << 16) + NET_ERROR);
+  bound = 1;                         // sendto auto-binds if unbound
+  *size = (unsigned int)ret;
+  return NET_OK;
 }
 
 //---------------------------------------------------------------------------
-// Read data, return sender's IP and port
-// Pre:
-//   *data = Buffer for received data.
-//   size = Number of bytes to receive.
-//   *senderIP = NULL
-//   port = undefined
-// Post:
-//   Returns NET_OK on success.
-//   Returns two part int code on error.
-//     The low 16 bits contains Status code as defined in net.h.
-//     The high 16 bits contains "Windows Socket Error Code".
-//   size = Number of bytes received, may be 0.
-//   *senderIP = IP address of sender as null terminated string.
-//   port = port number of sender.
-int __fastcall netReadData(char *data, unsigned int &size, char *senderIP, USHORT &port)
+// Send data to remote IP and port (UDP datagram to a specific port).
+int netSendDataPort(char *data, unsigned int *size, char *remoteIP, unsigned short port)
 {
-    int status;
-    int readSize = size;
+  int sendSize = (int)*size;
+  *size = 0;
 
-    size = 0;           // assume 0 bytes read, changed if read successful
-    if(bound == false)  // no receive from unbound socket
+  if (mode == SERVER) {
+    remote.sin_addr.s_addr = inet_addr(remoteIP);
+    remote.sin_port = htons(port);
+  }
+
+  if (mode == CLIENT && type == UNCONNECTED_TCP) {
+    ret = connect(sock, (struct sockaddr *)&remote, sizeof(remote));
+    if (ret < 0) {
+      int e = errno;
+      if (e == EISCONN) { ret = 0; type = CONNECTED_TCP; }
+      else if (e == EWOULDBLOCK || e == EAGAIN || e == EALREADY || e == EINPROGRESS)
         return NET_OK;
-
-    if(mode == SERVER && type == UNCONNECTED_TCP)
-    {
-        ret = listen(sock,1);
-        if (ret == SOCKET_ERROR)
-        {
-            status = WSAGetLastError();
-            return ((status << 16) + NET_ERROR);
-        }
-        SOCKET tempSock;
-        tempSock = accept(sock,NULL,NULL);
-        if (tempSock == INVALID_SOCKET)
-        {
-            status = WSAGetLastError();
-            if ( status != WSAEWOULDBLOCK)  // don't report WOULDBLOCK error
-                return ((status << 16) + NET_ERROR);
-            return NET_OK;      // no connection yet
-        }
-        closesocket(sock);      // don't need old socket
-        sock = tempSock;        // TCP client connected
-        type = CONNECTED_TCP;
+      else
+        return ((e << 16) + NET_ERROR);
+    } else {
+      type = CONNECTED_TCP;
     }
+  }
 
-    if(mode == CLIENT && type == UNCONNECTED_TCP)
-        return NET_OK;  // no connection yet
-
-    if(sock != NULL)
-    {
-        remoteAddrSize = sizeof(remote);
-        ret = recvfrom(sock, data, readSize, 0, (SOCKADDR *)&remote, (int *)&remoteAddrSize);
-        if (ret == SOCKET_ERROR) {
-            status = WSAGetLastError();
-            if ( status != WSAEWOULDBLOCK)  // don't report WOULDBLOCK error
-                return ((status << 16) + NET_ERROR);
-            ret = 0;            // clear SOCKET_ERROR
-        // if TCP connection did graceful close
-        } else if(ret == 0 && type == CONNECTED_TCP)
-            // return Remote Disconnect error
-            return ((REMOTE_DISCONNECT << 16) + NET_ERROR);
-        if (ret)
-        {
-            //IP of sender
-            strncpy(senderIP, inet_ntoa(remote.sin_addr), IP_SIZE);
-            port = remote.sin_port;     //port number of sender
-        }
-        size = ret;           // number of bytes read, may be 0
-    }
-    return NET_OK;
+  ret = sendto(sock, data, sendSize, 0, (struct sockaddr *)&remote, sizeof(remote));
+  if (ret < 0)
+    return ((errno << 16) + NET_ERROR);
+  bound = 1;
+  *size = (unsigned int)ret;
+  return NET_OK;
 }
 
-//--------------------------------------------------------------------------
-// Close socket and free buffers
-//
-int __fastcall netCloseSockets() {
-  int status;
-  BOOL linger;
+//---------------------------------------------------------------------------
+// TCP server: accept a pending connection (non-blocking). Returns 1 if a
+// connection is up, 0 if still waiting, <0 (negated status) on error.
+static int acceptIfServer(void)
+{
+  if (mode == SERVER && type == UNCONNECTED_TCP) {
+    if (listen(sock, 1) < 0)
+      return -(((errno) << 16) + NET_ERROR);
+    int tempSock = accept(sock, NULL, NULL);
+    if (tempSock < 0) {
+      int e = errno;
+      if (e != EWOULDBLOCK && e != EAGAIN)
+        return -(((e) << 16) + NET_ERROR);
+      return 0;                      // no connection yet
+    }
+    close(sock);                     // drop the listening socket
+    sock = tempSock;                 // client connected
+    setNonBlocking(sock);
+    type = CONNECTED_TCP;
+  }
+  return 1;
+}
 
+//---------------------------------------------------------------------------
+// Read data, return sender's IP. Non-blocking: *size = bytes read (may be 0).
+int netReadData(char *data, unsigned int *size, char *senderIP)
+{
+  int readSize = (int)*size;
+  *size = 0;
+  if (!bound)
+    return NET_OK;
+
+  int acc = acceptIfServer();
+  if (acc < 0) return -acc;          // propagate error status
+  if (acc == 0) return NET_OK;       // server still waiting
+
+  if (mode == CLIENT && type == UNCONNECTED_TCP)
+    return NET_OK;                   // not connected yet
+
+  if (sock >= 0) {
+    socklen_t rs = sizeof(remote);
+    ret = recvfrom(sock, data, readSize, 0, (struct sockaddr *)&remote, &rs);
+    if (ret < 0) {
+      int e = errno;
+      if (e != EWOULDBLOCK && e != EAGAIN)
+        return ((e << 16) + NET_ERROR);
+      ret = 0;
+    } else if (ret == 0 && type == CONNECTED_TCP) {
+      return ((REMOTE_DISCONNECT << 16) + NET_ERROR);   // graceful close
+    }
+    if (ret)
+      strncpy(senderIP, inet_ntoa(remote.sin_addr), IP_SIZE);
+    *size = (unsigned int)ret;
+  }
+  return NET_OK;
+}
+
+//---------------------------------------------------------------------------
+// Read data, return sender's IP and port.
+int netReadDataPort(char *data, unsigned int *size, char *senderIP, unsigned short *port)
+{
+  int readSize = (int)*size;
+  *size = 0;
+  if (!bound)
+    return NET_OK;
+
+  int acc = acceptIfServer();
+  if (acc < 0) return -acc;
+  if (acc == 0) return NET_OK;
+
+  if (mode == CLIENT && type == UNCONNECTED_TCP)
+    return NET_OK;
+
+  if (sock >= 0) {
+    socklen_t rs = sizeof(remote);
+    ret = recvfrom(sock, data, readSize, 0, (struct sockaddr *)&remote, &rs);
+    if (ret < 0) {
+      int e = errno;
+      if (e != EWOULDBLOCK && e != EAGAIN)
+        return ((e << 16) + NET_ERROR);
+      ret = 0;
+    } else if (ret == 0 && type == CONNECTED_TCP) {
+      return ((REMOTE_DISCONNECT << 16) + NET_ERROR);
+    }
+    if (ret) {
+      strncpy(senderIP, inet_ntoa(remote.sin_addr), IP_SIZE);
+      *port = ntohs(remote.sin_port);
+    }
+    *size = (unsigned int)ret;
+  }
+  return NET_OK;
+}
+
+//---------------------------------------------------------------------------
+// Close socket.
+int netCloseSockets(void)
+{
   type = UNCONNECTED;
-
-  // closesocket() implicitly causes a shutdown sequence to occur
-  if (closesocket(sock) == SOCKET_ERROR) {
-    status = WSAGetLastError();
-    if ( status != WSAEWOULDBLOCK) {  // don't report WOULDBLOCK error
-      return ((status << 16) + NET_ERROR);
+  if (sock >= 0) {
+    if (close(sock) < 0) {
+      int e = errno;
+      if (e != EWOULDBLOCK)
+        return ((e << 16) + NET_ERROR);
     }
   }
-
-  GlobalFree(sendbuf);
-  GlobalFree(recvbuf);
-  netInitialized = false;
-
-  if (WSACleanup())
-    return NET_ERROR;
+  sock = -1;
+  netInitialized = 0;
+  bound = 0;
   return NET_OK;
 }
 
-//-------------------------------------------------------------------------
-// Get the IP address of this computer as a string
-int __fastcall netLocalIP(char *localIP) {
+//---------------------------------------------------------------------------
+// Get this machine's IP address as a string.
+int netLocalIP(char *localIP)
+{
+  char hostName[256];
+  struct hostent *host;
 
-  char hostName[40];
-  hostent* host;
-  int status;
-
-  gethostname (hostName,40);
-  host = gethostbyname(hostName);
-  if(host == NULL) {                    // if gethostbyname failed
-    status = WSAGetLastError();         // get detailed error
-    return ( (status << 16) + NET_ERROR);
+  if (gethostname(hostName, sizeof(hostName)) < 0) {
+    strcpy(localIP, "127.0.0.1");
+    return NET_OK;
   }
-
-  sprintf(localIP, "%d.%d.%d.%d",
-          (unsigned char)host->h_addr_list[0][0],
-          (unsigned char)host->h_addr_list[0][1],
-          (unsigned char)host->h_addr_list[0][2],
-          (unsigned char)host->h_addr_list[0][3]);
+  host = gethostbyname(hostName);
+  if (host == NULL) {
+    strcpy(localIP, "127.0.0.1");           // fallback (offline / no DNS)
+    return NET_OK;
+  }
+  strncpy(localIP, inet_ntoa(*(struct in_addr *)host->h_addr_list[0]), IP_SIZE);
   return NET_OK;
 }
-
-
-
-
