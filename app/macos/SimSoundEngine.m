@@ -356,26 +356,40 @@ static NSString *cfStrProp(AudioObjectID obj, AudioObjectPropertySelector sel) {
     return s.samples ? 1 : 0;
 }
 
+// EASy68K controlSound codes (must match the original):
+//   0 = play once   1 = start looping   2 = stop this sound   3 = stop all
 - (void)control:(int)control index:(int)index {
     if (index < 0 || index >= NSLOTS) return;
     Slot s = gSlots[index];
-    if (control == 0) { [self stopLoop]; [self clearRing]; return; }       // stop
-    if (control == 2) {                                                    // loop
-        [self stopLoop];
-        if (!s.samples) return;
-        [self pushFrames:s.samples count:s.frames];
-        double period = (double)s.frames / _outRate;
-        _loopTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
-            dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
-        dispatch_source_set_timer(_loopTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(period*NSEC_PER_SEC)),
-                                  (uint64_t)(period*NSEC_PER_SEC), (uint64_t)(period*NSEC_PER_SEC/10));
-        __weak SimSoundEngine *weak = self;
-        Slot cap = s;
-        dispatch_source_set_event_handler(_loopTimer, ^{ [weak pushFrames:cap.samples count:cap.frames]; });
-        dispatch_resume(_loopTimer);
-        return;
+    switch (control) {
+        case 0:                                  // play once
+            [self pushFrames:s.samples count:s.frames];
+            break;
+        case 1:                                  // start looping
+            [self stopLoop];
+            if (!s.samples) break;
+            [self clearRing];                    // start the loop cleanly
+            [self pushFrames:s.samples count:s.frames];
+            {
+                double period = (double)s.frames / _outRate;
+                _loopTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                    dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
+                dispatch_source_set_timer(_loopTimer,
+                    dispatch_time(DISPATCH_TIME_NOW, (int64_t)(period * NSEC_PER_SEC)),
+                    (uint64_t)(period * NSEC_PER_SEC), (uint64_t)(period * NSEC_PER_SEC / 10));
+                __weak SimSoundEngine *weak = self;
+                Slot cap = s;
+                dispatch_source_set_event_handler(_loopTimer, ^{ [weak pushFrames:cap.samples count:cap.frames]; });
+                dispatch_resume(_loopTimer);
+            }
+            break;
+        case 2:                                  // stop this sound
+        case 3:                                  // stop all sounds
+        default:
+            [self stopLoop];
+            [self clearRing];
+            break;
     }
-    [self pushFrames:s.samples count:s.frames];                            // play
 }
 
 - (void)resetSounds { [self stopLoop]; [self clearRing]; }

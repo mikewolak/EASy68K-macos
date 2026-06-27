@@ -265,6 +265,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"Output";
     w.releasedWhenClosed = NO;
+    [w center];                 // open centered on screen, not bottom-left
     NSView *box = w.contentView;
 
     NSScrollView *gfxScroll = [[NSScrollView alloc] initWithFrame:box.bounds];
