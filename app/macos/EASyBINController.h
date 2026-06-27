@@ -18,4 +18,12 @@
 @interface EASyBINController : NSWindowController
 + (instancetype)shared;
 - (void)showBIN;
+
+// Remote control (driven by SimRemoteServer, no modal panels) — mirrors the
+// other functions so EASyBIN can be scripted/tested headlessly.
+- (NSDictionary *)remoteLoadSrec:(NSString *)path;
+- (NSDictionary *)remoteLoadBinary:(NSString *)path addr:(uint32_t)addr split:(int)split;
+- (NSDictionary *)remoteSaveBinary:(NSString *)path from:(uint32_t)from length:(uint32_t)length split:(int)split;
+- (NSDictionary *)remoteSaveSrec:(NSString *)path from:(uint32_t)from to:(uint32_t)to start:(uint32_t)start;
+- (NSString *)remoteMemoryAt:(uint32_t)addr length:(int)len;
 @end

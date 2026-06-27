@@ -17,6 +17,7 @@
 #import "SimRemoteServer.h"
 #import "SimController.h"
 #import "ASMDocument.h"
+#import "EASyBINController.h"
 #import <Cocoa/Cocoa.h>
 #import <sys/socket.h>
 #import <netinet/in.h>
@@ -153,6 +154,12 @@ static id mainSync(id (^block)(void)) {
         NSString *t = mainSync(^{ ASMDocument *d = [self frontDoc]; return d ? [d remoteSourceText] : @""; });
         return [self sendText:fd text:t];
     }
+    if ([path isEqualToString:@"/bin/memory"]) {     // EASyBIN buffer dump
+        uint32_t addr = (uint32_t)strtoul([query[@"addr"] UTF8String] ?: "0", NULL, 16);
+        int len = query[@"len"] ? [query[@"len"] intValue] : 256;
+        NSString *t = mainSync(^{ return [[EASyBINController shared] remoteMemoryAt:addr length:len]; });
+        return [self sendText:fd text:t];
+    }
 
     // --- JSON / action endpoints ---
     NSDictionary *result = mainSync(^id{
@@ -191,10 +198,25 @@ static id mainSync(id (^block)(void)) {
         if ([path isEqualToString:@"/sim/stop"])  { [sim remoteStop];  return @{ @"ok": @YES }; }
         if ([path isEqualToString:@"/sim/reset"]) { [sim remoteReset]; return [sim remoteState]; }
         if ([path isEqualToString:@"/sim/input"]) { [sim remoteInput:(query[@"text"] ?: body)]; return @{ @"ok": @YES }; }
+
+        // --- EASyBIN binary/S-record utility (no modal panels) ---
+        if ([path hasPrefix:@"/bin/"]) {
+            EASyBINController *bin = [EASyBINController shared];
+            uint32_t (^hx)(NSString *, const char *) = ^uint32_t(NSString *k, const char *def) {
+                return (uint32_t)strtoul([query[k] UTF8String] ?: def, NULL, 16); };
+            int split = query[@"split"] ? [query[@"split"] intValue] : 0;
+            NSString *p = query[@"path"] ?: body;
+            if ([path isEqualToString:@"/bin/load-srec"]) return [bin remoteLoadSrec:p];
+            if ([path isEqualToString:@"/bin/load-bin"])  return [bin remoteLoadBinary:p addr:hx(@"addr", "1000") split:split];
+            if ([path isEqualToString:@"/bin/save-bin"])  return [bin remoteSaveBinary:p from:hx(@"from", "1000") length:hx(@"len", "100") split:split];
+            if ([path isEqualToString:@"/bin/save-srec"]) return [bin remoteSaveSrec:p from:hx(@"from", "1000") to:hx(@"to", "10FF") start:hx(@"start", "1000")];
+        }
         if ([path isEqualToString:@"/"])
             return @{ @"app": @"EASy68K", @"endpoints": @[@"/status",@"/registers",@"/memory?addr=&len=",@"/console",
                        @"/source (GET/POST)",@"/open?path=",@"/save",@"/assemble",@"/run",
-                       @"/sim/load",@"/sim/run",@"/sim/step",@"/sim/stop",@"/sim/reset",@"/sim/input"] };
+                       @"/sim/load",@"/sim/run",@"/sim/step",@"/sim/stop",@"/sim/reset",@"/sim/input",
+                       @"/bin/memory?addr=&len=",@"/bin/load-srec?path=",@"/bin/load-bin?path=&addr=&split=",
+                       @"/bin/save-bin?path=&from=&len=&split=",@"/bin/save-srec?path=&from=&to=&start="] };
         return nil;
     });
 

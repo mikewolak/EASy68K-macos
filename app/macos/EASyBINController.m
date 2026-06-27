@@ -403,4 +403,68 @@
     [a addButtonWithTitle:@"OK"]; [a runModal];
 }
 
+#pragma mark remote control (no modal panels)
+
+// Push a value into a field if the window has been built (so an open window
+// reflects remote-driven state); harmless if it hasn't.
+- (void)setField:(NSTextField *)f hex:(uint32_t)v {
+    if (f) f.stringValue = [NSString stringWithFormat:@"%06X", v];
+}
+
+- (NSDictionary *)remoteLoadSrec:(NSString *)path {
+    [self buildIfNeeded];
+    char err[256] = {0}, s0[256] = {0}; uint32_t lo = 0, hi = 0, st = 0;
+    int r = eb_load_srec(path.fileSystemRepresentation, &lo, &hi, &st, s0, sizeof s0, err, sizeof err);
+    if (r != 0) return @{ @"ok": @NO, @"error": @(err) };
+    [self setField:_first hex:lo]; [self setField:_from hex:lo];
+    [self setField:_to hex:hi]; [self setField:_start hex:st];
+    [self setField:_len hex:hi - lo + 1];
+    _info.stringValue = [NSString stringWithFormat:@"Loaded S-Record: $%06X..$%06X (%u bytes) %@",
+                         lo, hi, hi - lo + 1, s0[0] ? @(s0) : @""];
+    _base = lo & ~0xFu; _hex.cursor = lo; [self refresh]; [self scrollToBase];
+    return @{ @"ok": @YES, @"low": @(lo), @"high": @(hi), @"start": @(st),
+              @"length": @(hi - lo + 1), @"s0": @(s0) };
+}
+
+- (NSDictionary *)remoteLoadBinary:(NSString *)path addr:(uint32_t)addr split:(int)split {
+    [self buildIfNeeded];
+    char err[256] = {0};
+    int n = eb_load_binary(path.fileSystemRepresentation, addr, split, err, sizeof err);
+    if (n < 0) return @{ @"ok": @NO, @"error": @(err) };
+    [self setField:_first hex:addr];
+    _info.stringValue = [NSString stringWithFormat:@"Loaded binary at $%06X (%d bytes, split %d)", addr, n, split];
+    _base = addr & ~0xFu; _hex.cursor = addr; [self refresh]; [self scrollToBase];
+    return @{ @"ok": @YES, @"addr": @(addr), @"bytes": @(n), @"split": @(split) };
+}
+
+- (NSDictionary *)remoteSaveBinary:(NSString *)path from:(uint32_t)from length:(uint32_t)length split:(int)split {
+    char err[256] = {0};
+    int r = eb_save_binary(path.fileSystemRepresentation, from, length, split, err, sizeof err);
+    return r == 0 ? @{ @"ok": @YES, @"from": @(from), @"length": @(length), @"split": @(split) }
+                  : @{ @"ok": @NO, @"error": @(err) };
+}
+
+- (NSDictionary *)remoteSaveSrec:(NSString *)path from:(uint32_t)from to:(uint32_t)to start:(uint32_t)start {
+    char err[256] = {0};
+    int r = eb_save_srecord(path.fileSystemRepresentation, from, to, start, err, sizeof err);
+    return r == 0 ? @{ @"ok": @YES, @"from": @(from), @"to": @(to), @"start": @(start) }
+                  : @{ @"ok": @NO, @"error": @(err) };
+}
+
+- (NSString *)remoteMemoryAt:(uint32_t)addr length:(int)len {
+    unsigned char *mem = eb_memory();
+    NSMutableString *m = [NSMutableString string];
+    uint32_t base = addr & 0xFFFFFFF0u;
+    for (int row = 0; row * 16 < len; row++) {
+        uint32_t a = base + (uint32_t)row * 16;
+        if (a >= EB_MEMSIZE) break;
+        [m appendFormat:@"%06X  ", a];
+        for (int c = 0; c < 16; c++) [m appendFormat:@"%02X ", mem[a + c]];
+        [m appendString:@" "];
+        for (int c = 0; c < 16; c++) { unsigned char ch = mem[a + c]; [m appendFormat:@"%c", (ch >= ' ' && ch < 127) ? ch : '.']; }
+        [m appendString:@"\n"];
+    }
+    return m;
+}
+
 @end
