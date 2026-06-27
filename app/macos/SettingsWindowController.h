@@ -20,6 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface SettingsWindowController : NSWindowController
 + (void)showSettings;
++ (void)restoreSavedDevices;   // re-open the remembered MIDI input at launch
 @end
 
 NS_ASSUME_NONNULL_END

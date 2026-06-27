@@ -33,6 +33,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (int)playIndex:(int)index;                             // play slot once
 - (void)control:(int)control index:(int)index;           // 0 stop, 1 play, 2 loop
 - (void)resetSounds;                                      // stop everything
+
+// ---- output device + L/R channel routing (persisted in NSUserDefaults) ----
+- (NSArray<NSDictionary<NSString *, id> *> *)outputDevices;  // {name, uid, channels}
+- (NSString *)currentDeviceUID;
+- (void)selectDeviceUID:(NSString *)uid;
+- (int)deviceChannelCount;       // output channels on the current device
+- (int)leftChannel;              // 0-based device channel feeding L
+- (int)rightChannel;             // 0-based device channel feeding R
+- (void)setLeftChannel:(int)L right:(int)R;
 @end
 
 NS_ASSUME_NONNULL_END

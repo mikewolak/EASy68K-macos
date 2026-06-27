@@ -42,7 +42,6 @@ extern uint64_t  cycles;
 extern bool      halt, runMode, trace, sstep, stopInstruction;
 extern int       exceptions;
 extern bool      bitfield;
-extern bool      simhalt_on;   // SIMHALT (FFFF FFFF) halts when true
 
 // Breakpoints — the core checks these itself in runprog() (sets trace=true to
 // stop). brkpt[0..bpoints) are simple PC breakpoints; runToAddr is the

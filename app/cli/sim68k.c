@@ -26,7 +26,7 @@ extern int32_t   PC, OLD_PC;
 extern int32_t   D[], A[];
 extern short     SR;
 extern uint64_t  cycles;
-extern bool      halt, runMode, trace, sstep, stopInstruction, simhalt_on;
+extern bool      halt, runMode, trace, sstep, stopInstruction;
 extern int       exceptions;
 extern bool      bitfield;
 
@@ -48,7 +48,6 @@ int main(int argc, char **argv)
 
     exceptions = 1;             // enable exception processing (vectored)
     bitfield   = true;          // allow 68020 bitfield instructions
-    simhalt_on = true;          // SIMHALT (FFFF FFFF) stops execution
     initSim();                  // reset CPU + simulator state
 
     if (loadSrec(argv[1]) != SUCCESS) {

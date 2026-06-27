@@ -986,16 +986,12 @@ int simhalt(int size, char *label, char *op, int *errorPtr)
     define(label, loc, pass2, true, errorPtr);
 
   if (pass2) {
-    // Emit FFFF FFFF, advancing loc between the words like every other
-    // multi-word emit (output() writes at the current loc via outputObj).
-    // Without the advance the second FFFF lands on the first word's address
-    // and the S-record builder drops it -> SIMHALT loads as a single FFFF and
-    // the sim treats it as an illegal Line-1111 instruction instead of halting.
-    output(0xFFFF, WORD_SIZE);  loc += WORD_SIZE;   // opcode $FFFF
-    output(0xFFFF, WORD_SIZE);  loc += WORD_SIZE;   // opcode $FFFF
-  } else {
-    loc += LONG_SIZE;
+    //if (listFlag)       // if directive should be listed
+    //  listLine(line, "\0");
+    output(0xFFFF, WORD_SIZE);  // opcode $FFFF $FFFF
+    output(0xFFFF, WORD_SIZE);  // opcode $FFFF $FFFF
   }
+  loc += LONG_SIZE;
 
   return NORMAL;
 }

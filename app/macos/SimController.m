@@ -472,7 +472,6 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     BOOL bf = NO, shoff = NO;
     [self.listingView scanDirectivesBitfield:&bf simhaltOff:&shoff];
     if (bf) bitfield = true;
-    simhalt_on = !shoff;     // SIMHALT halts unless *[sim68k]simhalt_off was set
     // sync the core's simple-breakpoint array from the listing (gutter +
     // *[sim68k]break directives)
     bpoints = 0;

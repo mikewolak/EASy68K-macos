@@ -42,6 +42,9 @@
     if (![pi.arguments containsObject:@"--no-control"] && port != 0)
         [[SimRemoteServer sharedServer] startOnPort:port];
 
+    // restore the remembered MIDI input (audio device/channels self-restore)
+    [SettingsWindowController restoreSavedDevices];
+
     [NSApp activateIgnoringOtherApps:YES];
 }
 

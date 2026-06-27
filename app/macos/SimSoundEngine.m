@@ -23,7 +23,14 @@
 #import "SimSoundEngine.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <CoreAudio/CoreAudio.h>
 #include <stdatomic.h>
+
+// Persisted output device + L/R channel routing.
+#define K_AUDIO_UID @"AudioDeviceUID"
+#define K_AUDIO_CHL @"AudioChannelL"
+#define K_AUDIO_CHR @"AudioChannelR"
+#define CANON_RATE  44100.0
 
 #define RING_FRAMES (1u << 16)          // 65536 frames (~1.5 s @ 44.1k), power of 2
 #define RING_FLOATS (RING_FRAMES * 2u)  // interleaved stereo
@@ -63,6 +70,8 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
     NSMutableDictionary<NSString *, NSValue *> *_byName;
     NSLock        *_lock;
     dispatch_source_t _loopTimer;       // tops up the ring for a looping sound
+    AudioDeviceID  _deviceID;           // 0 = system default output
+    int            _chL, _chR;          // device channels feeding L / R
 }
 
 + (instancetype)shared {
@@ -76,7 +85,12 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
         _lock = [NSLock new];
         _retain = [NSMutableArray array];
         _byName = [NSMutableDictionary dictionary];
-        _outRate = 44100;
+        _outRate = CANON_RATE;          // fixed canonical rate; HAL resamples to device
+        NSUserDefaults *u = [NSUserDefaults standardUserDefaults];
+        _chL = [u objectForKey:K_AUDIO_CHL] ? (int)[u integerForKey:K_AUDIO_CHL] : 0;  // ch 1
+        _chR = [u objectForKey:K_AUDIO_CHR] ? (int)[u integerForKey:K_AUDIO_CHR] : 1;  // ch 2
+        NSString *uid = [u stringForKey:K_AUDIO_UID];
+        _deviceID = uid.length ? [self deviceForUID:uid] : 0;
         [self buildUnit];
     }
     return self;
@@ -89,14 +103,22 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     AudioComponent comp = AudioComponentFindNext(NULL, &desc);
     if (!comp || AudioComponentInstanceNew(comp, &_unit) != noErr) { _unit = NULL; return; }
+    [self configureUnit];
+}
 
-    AudioStreamBasicDescription hw = {0}; UInt32 sz = sizeof(hw);
-    if (AudioUnitGetProperty(_unit, kAudioUnitProperty_StreamFormat,
-                             kAudioUnitScope_Output, 0, &hw, &sz) == noErr && hw.mSampleRate > 0)
-        _outRate = hw.mSampleRate;
+// (Re)apply device, format, channel map and callback, then init + start. Called
+// at startup and whenever the device or channel routing changes.
+- (void)configureUnit {
+    if (!_unit) return;
+    AudioOutputUnitStop(_unit);
+    AudioUnitUninitialize(_unit);
+
+    if (_deviceID)
+        AudioUnitSetProperty(_unit, kAudioOutputUnitProperty_CurrentDevice,
+                             kAudioUnitScope_Global, 0, &_deviceID, sizeof(_deviceID));
 
     AudioStreamBasicDescription fmt = {0};
-    fmt.mSampleRate = _outRate;
+    fmt.mSampleRate = CANON_RATE;
     fmt.mFormatID = kAudioFormatLinearPCM;
     fmt.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;  // interleaved
     fmt.mChannelsPerFrame = 2;
@@ -115,7 +137,112 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
     AudioUnitSetProperty(_unit, kAudioUnitProperty_SetRenderCallback,
                          kAudioUnitScope_Input, 0, &cb, sizeof(cb));
 
+    [self applyChannelMap];   // route our L/R to the chosen device channels
+
     if (AudioUnitInitialize(_unit) == noErr) AudioOutputUnitStart(_unit);
+}
+
+// Map our 2 source channels (0=L, 1=R) onto the device's output channels.
+- (void)applyChannelMap {
+    if (!_unit) return;
+    AudioStreamBasicDescription outf = {0}; UInt32 sz = sizeof(outf);
+    if (AudioUnitGetProperty(_unit, kAudioUnitProperty_StreamFormat,
+                             kAudioUnitScope_Output, 0, &outf, &sz) != noErr) return;
+    int nOut = (int)outf.mChannelsPerFrame;
+    if (nOut < 1) return;
+    SInt32 *map = (SInt32 *)calloc(nOut, sizeof(SInt32));
+    for (int i = 0; i < nOut; i++) map[i] = -1;            // -1 = silence
+    if (_chL >= 0 && _chL < nOut) map[_chL] = 0;           // device ch chL <- our L
+    if (_chR >= 0 && _chR < nOut) map[_chR] = 1;           // device ch chR <- our R
+    AudioUnitSetProperty(_unit, kAudioOutputUnitProperty_ChannelMap,
+                         kAudioUnitScope_Output, 0, map, (UInt32)(nOut * sizeof(SInt32)));
+    free(map);
+}
+
+#pragma mark device + channel selection
+
+static NSString *cfStrProp(AudioObjectID obj, AudioObjectPropertySelector sel) {
+    AudioObjectPropertyAddress a = { sel, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain };
+    CFStringRef s = NULL; UInt32 sz = sizeof(s);
+    if (AudioObjectGetPropertyData(obj, &a, 0, NULL, &sz, &s) != noErr || !s) return nil;
+    return (__bridge_transfer NSString *)s;
+}
+
+- (int)outputChannelsOf:(AudioDeviceID)dev {
+    AudioObjectPropertyAddress a = { kAudioDevicePropertyStreamConfiguration,
+                                     kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMain };
+    UInt32 sz = 0;
+    if (dev == 0 || AudioObjectGetPropertyDataSize(dev, &a, 0, NULL, &sz) != noErr) return 0;
+    AudioBufferList *bl = (AudioBufferList *)malloc(sz);
+    int ch = 0;
+    if (AudioObjectGetPropertyData(dev, &a, 0, NULL, &sz, bl) == noErr)
+        for (UInt32 i = 0; i < bl->mNumberBuffers; i++) ch += bl->mBuffers[i].mNumberChannels;
+    free(bl);
+    return ch;
+}
+
+- (AudioDeviceID)defaultOutputDevice {
+    AudioObjectPropertyAddress a = { kAudioHardwarePropertyDefaultOutputDevice,
+                                     kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain };
+    AudioDeviceID d = 0; UInt32 sz = sizeof(d);
+    AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, NULL, &sz, &d);
+    return d;
+}
+
+- (AudioDeviceID)deviceForUID:(NSString *)uid {
+    if (!uid.length) return 0;
+    AudioObjectPropertyAddress a = { kAudioHardwarePropertyTranslateUIDToDevice,
+                                     kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain };
+    CFStringRef cf = (__bridge CFStringRef)uid;
+    AudioDeviceID d = 0; UInt32 sz = sizeof(d);
+    AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, sizeof(cf), &cf, &sz, &d);
+    return d;
+}
+
+- (NSArray<NSDictionary<NSString *, id> *> *)outputDevices {
+    NSMutableArray *out = [NSMutableArray array];
+    AudioObjectPropertyAddress a = { kAudioHardwarePropertyDevices,
+                                     kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain };
+    UInt32 sz = 0;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, NULL, &sz) != noErr) return out;
+    int n = (int)(sz / sizeof(AudioDeviceID));
+    AudioDeviceID *ids = (AudioDeviceID *)malloc(sz);
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, NULL, &sz, ids) == noErr) {
+        for (int i = 0; i < n; i++) {
+            int ch = [self outputChannelsOf:ids[i]];
+            if (ch <= 0) continue;            // output devices only
+            NSString *name = cfStrProp(ids[i], kAudioObjectPropertyName);
+            NSString *uid  = cfStrProp(ids[i], kAudioDevicePropertyDeviceUID);
+            [out addObject:@{ @"name": name ?: @"?", @"uid": uid ?: @"", @"channels": @(ch) }];
+        }
+    }
+    free(ids);
+    return out;
+}
+
+- (NSString *)currentDeviceUID {
+    AudioDeviceID d = _deviceID ? _deviceID : [self defaultOutputDevice];
+    return cfStrProp(d, kAudioDevicePropertyDeviceUID) ?: @"";
+}
+
+- (void)selectDeviceUID:(NSString *)uid {
+    _deviceID = [self deviceForUID:uid];
+    [[NSUserDefaults standardUserDefaults] setObject:(uid ?: @"") forKey:K_AUDIO_UID];
+    [self configureUnit];
+}
+
+- (int)deviceChannelCount {
+    AudioDeviceID d = _deviceID ? _deviceID : [self defaultOutputDevice];
+    return [self outputChannelsOf:d];
+}
+- (int)leftChannel  { return _chL; }
+- (int)rightChannel { return _chR; }
+- (void)setLeftChannel:(int)L right:(int)R {
+    _chL = L; _chR = R;
+    NSUserDefaults *u = [NSUserDefaults standardUserDefaults];
+    [u setInteger:L forKey:K_AUDIO_CHL];
+    [u setInteger:R forKey:K_AUDIO_CHR];
+    [self configureUnit];
 }
 
 #pragma mark ring producer
