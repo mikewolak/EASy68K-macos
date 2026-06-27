@@ -29,8 +29,24 @@
 static const CGRect kPanel2 = {{8, 8},  {329, 69}};   // 7-seg, black
 static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 
+// Momentary push button: fires onDown when pressed, onUp when released, and
+// shows its alternate (pressed) image while held. The original pb0-7 are
+// active-low — pressed clears the bit, released sets it.
+@interface E68PushButton : NSButton
+@property (nonatomic, copy) void (^onDown)(void);
+@property (nonatomic, copy) void (^onUp)(void);
+@end
+@implementation E68PushButton
+- (void)mouseDown:(NSEvent *)e {
+    if (self.onDown) self.onDown();
+    [super mouseDown:e];        // tracks the press until the mouse is released
+    if (self.onUp) self.onUp();
+}
+@end
+
 @implementation SimHardwareView {
     NSButton    *_switch[8];
+    E68PushButton *_pb[8];          // eight momentary push buttons (Buttons Address)
     NSTextField *_seg7Field, *_ledField, *_switchField, *_pbField;
     uint8_t      _segVal[8];
     uint8_t      _ledVal;
@@ -41,6 +57,7 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     NSPopUpButton *_autoIRQ;
     NSTextField   *_autoInterval;
     NSButton      *_autoBtn;
+    NSButton      *_autoChk[7];     // per-IRQ "Automatic" enables
     NSTimer       *_autoTimer;
 }
 
@@ -93,6 +110,26 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
         [self addSubview:sw];
     }
 
+    // eight momentary PUSH BUTTONS (the Buttons Address row, pb7..pb0). The .dfm
+    // puts them at y=192, 33x33, aligned under the switches; active-low.
+    NSImage *pbUp = [self image:@"pushbutton_up"], *pbDn = [self image:@"pushbutton_down"];
+    if (memory) memory[_pbAddr & ADDRMASK] = 0xFF;   // all released
+    for (int b = 7; b >= 0; b--) {
+        CGFloat x = 14 + 40 * (7 - b);
+        E68PushButton *pb = [[E68PushButton alloc] initWithFrame:NSMakeRect(x, 185, 33, 33)];
+        pb.buttonType = NSButtonTypeMomentaryChange;
+        pb.bordered = NO; pb.imagePosition = NSImageOnly;
+        pb.imageScaling = NSImageScaleProportionallyUpOrDown;
+        pb.image = pbUp; pb.alternateImage = pbDn ?: pbUp;
+        pb.toolTip = [NSString stringWithFormat:@"Push button %d (bit %d) — hold to press (active-low)", b, b];
+        int bit = b;
+        __weak SimHardwareView *weak = self;
+        pb.onDown = ^{ if (memory) memory[weak.pbAddr & ADDRMASK] &= ~(1 << bit); [weak refresh]; };
+        pb.onUp   = ^{ if (memory) memory[weak.pbAddr & ADDRMASK] |=  (1 << bit); [weak refresh]; };
+        _pb[b] = pb;
+        [self addSubview:pb];
+    }
+
     // "Address:" labels + the four memory-mapped address fields (x=362 region,
     // y from the .dfm: seg7=48, LED=96, switch=152, pb=200)
     CGFloat ys[4]   = {48, 96, 152, 200};
@@ -137,17 +174,28 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 }
 
 - (void)buildLowerSections {
-    // ---- Interrupt group: seven IRQ push buttons (1..7) ----
+    // ---- Interrupt group: seven IRQ buttons (7..1) + per-IRQ "Automatic" ----
     NSBox *irqBox = [self groupBox:@"Interrupt" frame:NSMakeRect(8, 232, 196, 92)];
     NSView *ic = irqBox.contentView;
-    for (int n = 1; n <= 7; n++) {
-        NSButton *pb = [NSButton buttonWithTitle:[NSString stringWithFormat:@"%d", n]
-                                          target:self action:@selector(irqButton:)];
-        pb.frame = NSMakeRect(6 + (n-1)*26, 20, 24, 38);
+    // buttons are labelled 7..1 left-to-right (matching the .dfm) and momentary.
+    for (int col = 0; col < 7; col++) {
+        int n = 7 - col;                      // leftmost = IRQ7
+        CGFloat x = 4 + col * 26;
+        NSTextField *l = [self smallLabel:[NSString stringWithFormat:@"%d", n]
+                                    frame:NSMakeRect(x + 5, 2, 16, 12) in:ic];
+        l.alignment = NSTextAlignmentCenter;
+        NSButton *pb = [NSButton buttonWithTitle:@"" target:self action:@selector(irqButton:)];
+        pb.frame = NSMakeRect(x, 16, 24, 24);
         pb.bezelStyle = NSBezelStyleSmallSquare; pb.tag = n;
         pb.toolTip = [NSString stringWithFormat:@"Trigger IRQ %d", n];
         [ic addSubview:pb];
+        NSButton *chk = [NSButton checkboxWithTitle:@"" target:nil action:NULL];
+        chk.frame = NSMakeRect(x + 4, 44, 18, 18); chk.tag = n;
+        chk.toolTip = [NSString stringWithFormat:@"Automatic IRQ %d at the Auto Interval rate", n];
+        [ic addSubview:chk];
+        _autoChk[n-1] = chk;
     }
+    [self smallLabel:@"Automatic" frame:NSMakeRect(6, 64, 120, 12) in:ic];
 
     // ---- Auto Interval group ----
     NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(212, 232, 132, 92)];
@@ -201,8 +249,12 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
         double ms = MAX(10, _autoInterval.doubleValue);
         int n = (int)_autoIRQ.indexOfSelectedItem + 1;
         _autoBtn.title = @"Stop";
+        __weak SimHardwareView *weak = self;
         _autoTimer = [NSTimer scheduledTimerWithTimeInterval:ms/1000.0 repeats:YES block:^(NSTimer *t) {
-            irq |= (0x01 << (n - 1));
+            irq |= (0x01 << (n - 1));                 // the Auto Interval IRQ
+            SimHardwareView *s = weak; if (!s) return;
+            for (int k = 0; k < 7; k++)               // + any IRQ marked Automatic
+                if (s->_autoChk[k].state == NSControlStateValueOn) irq |= (0x01 << k);
         }];
     }
 }
