@@ -50,6 +50,7 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     NSTextField *_seg7Field, *_ledField, *_switchField, *_pbField;
     uint8_t      _segVal[8];
     uint8_t      _ledVal;
+    CGFloat      _ledGlow[8];       // afterglow 0..1 per LED for a smooth trail
     // memory map editor
     NSButton    *_mapChk[4];
     NSTextField *_mapStart[4], *_mapEnd[4];
@@ -59,7 +60,21 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     NSButton      *_autoBtn;
     NSButton      *_autoChk[7];     // per-IRQ "Automatic" enables
     NSTimer       *_autoTimer;
+    NSTimer       *_refreshTimer;   // live-refresh while the window is visible
 }
+
+// Live-update the 7-seg / LEDs ~20x/sec while the window is on screen, so a
+// running program driving the hardware addresses is reflected immediately.
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window && !_refreshTimer) {
+        __weak SimHardwareView *weak = self;
+        _refreshTimer = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
+            if (weak.window.isVisible) [weak refresh];
+        }];
+    }
+}
+- (void)dealloc { [_refreshTimer invalidate]; [_autoTimer invalidate]; }
 
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self = [super initWithFrame:NSMakeRect(0,0,462,495)])) {
@@ -308,11 +323,12 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
         [self drawDigit:_segVal[d] baseX:bx baseY:by];
     }
 
-    // LEDs inside Panel1: bit b (7=left … 0=right)
+    // LEDs inside Panel1: bit b (7=left … 0=right). _ledGlow is the (optionally
+    // decaying) brightness so a sweep leaves a smooth trail.
     for (int b = 7; b >= 0; b--) {
         CGFloat x = kPanel1.origin.x + 16 + 40 * (7 - b);
         CGFloat y = kPanel1.origin.y + 8;
-        [self drawLED:((_ledVal >> b) & 1) inRect:NSMakeRect(x, y, 17, 17)];
+        [self drawLED:_ledGlow[b] inRect:NSMakeRect(x, y, 17, 17)];
     }
 }
 
@@ -357,22 +373,27 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     [[NSBezierPath bezierPathWithOvalInRect:dp] fill];
 }
 
-- (void)drawLED:(BOOL)lit inRect:(NSRect)r {
+// level 0..1 — full brightness at 1, fading to the dark "off" look at 0.
+- (void)drawLED:(CGFloat)level inRect:(NSRect)r {
+    if (level < 0) level = 0; if (level > 1) level = 1;
     NSColor *bright = [NSColor colorWithCalibratedRed:1.0 green:0.22 blue:0.18 alpha:1];
     NSColor *dark   = [NSColor colorWithCalibratedRed:0.45 green:0.04 blue:0.04 alpha:1];
     NSColor *offc   = [NSColor colorWithCalibratedRed:0.32 green:0.06 blue:0.06 alpha:1];
     NSBezierPath *body = [NSBezierPath bezierPathWithOvalInRect:r];
-    if (lit) {
+    if (level > 0.02) {
+        NSColor *hi = [offc blendedColorWithFraction:level ofColor:bright];   // brightness lerp
+        NSColor *lo = [offc blendedColorWithFraction:level ofColor:dark];
         NSShadow *s = [NSShadow new];
-        s.shadowColor = [bright colorWithAlphaComponent:0.9]; s.shadowBlurRadius = 6;
+        s.shadowColor = [bright colorWithAlphaComponent:0.9 * level];
+        s.shadowBlurRadius = 6 * level;
         [NSGraphicsContext saveGraphicsState]; [s set];
-        NSGradient *g = [[NSGradient alloc] initWithColors:@[bright, dark]];
+        NSGradient *g = [[NSGradient alloc] initWithColors:@[hi, lo]];
         [g drawInBezierPath:body relativeCenterPosition:NSMakePoint(-0.25, -0.3)];
         [NSGraphicsContext restoreGraphicsState];
-        // specular highlight
+        // specular highlight, brightest when fully lit
         NSRect hl = NSInsetRect(r, r.size.width*0.30, r.size.height*0.30);
         hl.origin.x -= r.size.width*0.10; hl.origin.y -= r.size.height*0.12;
-        [[NSColor colorWithWhite:1 alpha:0.55] setFill];
+        [[NSColor colorWithWhite:1 alpha:0.55 * level] setFill];
         [[NSBezierPath bezierPathWithOvalInRect:hl] fill];
     } else {
         [offc setFill]; [body fill];
@@ -400,17 +421,26 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     else                                  memory[a] &= ~(1 << bit);
 }
 
-- (void)memoryChangedAt:(int)loc {
-    int a = loc & ADDRMASK;
-    if ((a >= (int)_seg7Addr - 4 && a <= (int)_seg7Addr + 15) ||
-        (a >= (int)_ledAddr  - 4 && a <= (int)_ledAddr))
-        dispatch_async(dispatch_get_main_queue(), ^{ [self refresh]; });
-}
+// Called from the SIM thread on every write to a hardware-mapped address. It
+// MUST NOT dispatch to the main queue per write: a tight loop writing the 7-seg
+// fires this millions of times/sec and would flood the main queue into a freeze.
+// The ~20 Hz refresh timer (viewDidMoveToWindow) repaints from memory instead.
+- (void)memoryChangedAt:(int)loc { (void)loc; }
 
 - (void)refresh {
     if (memory) {
         for (int i = 0; i < 8; i++) _segVal[i] = (uint8_t)memory[(_seg7Addr + i * 2) & ADDRMASK];
         _ledVal = (uint8_t)memory[_ledAddr & ADDRMASK];
+    }
+    // LED afterglow (a macOS-only nicety, toggled in Settings; default on). When
+    // off the LEDs are crisp on/off exactly like the original.
+    NSUserDefaults *u = [NSUserDefaults standardUserDefaults];
+    BOOL glow = [u objectForKey:@"HwLEDGlow"] ? [u boolForKey:@"HwLEDGlow"] : YES;
+    for (int b = 0; b < 8; b++) {
+        BOOL on = (_ledVal >> b) & 1;
+        if (!glow)      _ledGlow[b] = on ? 1.0 : 0.0;
+        else if (on)    _ledGlow[b] = 1.0;                          // snap on
+        else { _ledGlow[b] *= 0.55; if (_ledGlow[b] < 0.01) _ledGlow[b] = 0; }  // fade out
     }
     self.needsDisplay = YES;
 }

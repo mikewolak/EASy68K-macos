@@ -38,6 +38,7 @@ static NSString * const kBaudNames[] = {
     NSPopUpButton *_midiOutPopup;
     NSPopUpButton *_serialPortPopup;
     NSPopUpButton *_baudPopup;
+    NSButton      *_glowCheck;
 }
 
 + (void)showSettings {
@@ -55,7 +56,7 @@ static NSString * const kBaudNames[] = {
 - (void)buildIfNeeded {
     if (self.window) return;
 
-    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 500, 470)
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 500, 510)
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"Settings";
@@ -119,9 +120,15 @@ static NSString * const kBaudNames[] = {
     _serialPortPopup = [self popupAction:@selector(serialPortChanged:)];
     NSTextField *baudLbl = [self formLabel:@"Baud rate"];
     _baudPopup = [self popupAction:@selector(baudChanged:)];
+    _glowCheck = [NSButton checkboxWithTitle:@"Hardware LED glow (afterglow trail)"
+                                      target:self action:@selector(glowChanged:)];
+    _glowCheck.translatesAutoresizingMaskIntoConstraints = NO;
+    NSUserDefaults *gu = [NSUserDefaults standardUserDefaults];
+    _glowCheck.state = ([gu objectForKey:@"HwLEDGlow"] ? [gu boolForKey:@"HwLEDGlow"] : YES)
+                       ? NSControlStateValueOn : NSControlStateValueOff;
     for (NSView *v in @[devLbl, _audioDevicePopup, chLbl, _leftChPopup, _rightChPopup,
                         midiLbl, _midiInPopup, midiOutLbl, _midiOutPopup,
-                        serLbl, _serialPortPopup, baudLbl, _baudPopup])
+                        serLbl, _serialPortPopup, baudLbl, _baudPopup, _glowCheck])
         [root addSubview:v];
 
     // hot-plug: refresh the serial-port list when a USB device appears/disappears
@@ -210,6 +217,9 @@ static NSString * const kBaudNames[] = {
         [_baudPopup.centerYAnchor constraintEqualToAnchor:baudLbl.centerYAnchor],
         [_baudPopup.leadingAnchor constraintEqualToAnchor:baudLbl.trailingAnchor constant:10],
         [_baudPopup.widthAnchor constraintEqualToConstant:165],
+
+        [_glowCheck.topAnchor constraintEqualToAnchor:baudLbl.bottomAnchor constant:16],
+        [_glowCheck.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:20],
     ]];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(syncFromTheme)
@@ -325,6 +335,9 @@ static NSString * const kBaudNames[] = {
 - (void)serialPortChanged:(NSPopUpButton *)p {
     [SimSerialEngine shared].selectedPortPath =
         (p.indexOfSelectedItem <= 0) ? nil : p.selectedItem.representedObject;   // 0 = None
+}
+- (void)glowChanged:(NSButton *)b {
+    [[NSUserDefaults standardUserDefaults] setBool:(b.state == NSControlStateValueOn) forKey:@"HwLEDGlow"];
 }
 - (void)baudChanged:(NSPopUpButton *)p {
     [SimSerialEngine shared].baudIndex = (int)p.indexOfSelectedItem;
