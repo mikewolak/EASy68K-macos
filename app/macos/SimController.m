@@ -24,6 +24,7 @@
 #import "SimHardwareView.h"
 #import "SimHwBridge.h"
 #import "E68BrushedView.h"
+#import "SimSoundBridge.h"
 #import "SimLogController.h"
 #import "SimLogBridge.h"
 #import "E68Theme.h"
@@ -454,6 +455,8 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 - (BOOL)loadProgram:(NSString *)srecPath title:(NSString *)title {
     self.srecPath = srecPath;
     self.programName = title;
+    // resolve relative WAV names (TRAP sound tasks) against the program's folder
+    snd_set_base_dir([srecPath stringByDeletingLastPathComponent].fileSystemRepresentation);
     self.window.title = [NSString stringWithFormat:@"Simulator — %@", title];
     if (!memory) memory = (char *)calloc(SIM_MEMSIZE, 1);
     exceptions = 1; bitfield = true;

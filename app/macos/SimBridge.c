@@ -26,6 +26,7 @@
 #include "SimGfxBridge.h"     // routes graphics/text to the SimGraphicsView
 #include "SimLogBridge.h"     // pretty-prints .L68 source lines into the log
 #include "SimHwBridge.h"      // memory-mapped LEDs/7-seg/switches Hardware window
+#include "SimSoundBridge.h"   // low-latency ring-buffer audio for TRAP sound tasks
 
 extern int PC;               // current program counter (globals.c, int32_t)
 
@@ -81,15 +82,15 @@ static void io_setDrawingMode(int m){ gfx_setPenMode(m); }
 static void io_setPenWidth(int w){ gfx_setPenWidth(w); }
 static void io_drawText(const char*s,int x,int y){ gfx_drawText(s,x,y); }
 static void io_FormPaint(void*s){(void)s; gfx_present();}  // task 94: flip back->front
-static void io_playSound(char*f,short*r){(void)f; if(r)*r=0;}
-static void io_loadSound(char*f,int i){(void)f;(void)i;}
-static void io_playSoundMem(int i,short*r){(void)i; if(r)*r=0;}
-static void io_controlSound(int c,int i,short*r){(void)c;(void)i; if(r)*r=0;}
-static void io_playSoundDX(char*f,short*r){(void)f; if(r)*r=0;}
-static void io_loadSoundDX(char*f,int i,short*r){(void)f;(void)i; if(r)*r=0;}
-static void io_playSoundMemDX(int i,short*r){(void)i; if(r)*r=0;}
-static void io_controlSoundDX(int c,int i,short*r){(void)c;(void)i; if(r)*r=0;}
-static void io_ResetSounds(void){}
+static void io_playSound(char*f,short*r){ int ok=snd_play_file(f); if(r)*r=ok?0:1; }
+static void io_loadSound(char*f,int i){ snd_load(f,i); }
+static void io_playSoundMem(int i,short*r){ int ok=snd_play_index(i); if(r)*r=ok?0:1; }
+static void io_controlSound(int c,int i,short*r){ snd_control(c,i); if(r)*r=0; }
+static void io_playSoundDX(char*f,short*r){ int ok=snd_play_file(f); if(r)*r=ok?0:1; }
+static void io_loadSoundDX(char*f,int i,short*r){ snd_load(f,i); if(r)*r=0; }
+static void io_playSoundMemDX(int i,short*r){ int ok=snd_play_index(i); if(r)*r=ok?0:1; }
+static void io_controlSoundDX(int c,int i,short*r){ snd_control(c,i); if(r)*r=0; }
+static void io_ResetSounds(void){ snd_reset(); }
 static void io_initComm(int c,char*p,short*r){(void)c;(void)p; if(r)*r=0;}
 static void io_setCommParams(int c,int s,short*r){(void)c;(void)s; if(r)*r=0;}
 static void io_readComm(int c,uchar*n,char*s,short*r){(void)c;(void)n;(void)s; if(r)*r=0;}
