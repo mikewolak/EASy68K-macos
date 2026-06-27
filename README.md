@@ -91,6 +91,11 @@ offscreen bitmap and presented at a strict **60 FPS** via `CVDisplayLink`.
 **Full-screen** scales the canvas centred, **preserving exact aspect ratio**
 with black letterbox/pillarbox.
 
+The **EASYZONE** game (a Battlezone-style 68000 vector game) runs end-to-end —
+graphics, sound effects and keyboard input:
+
+![EASYZONE — a Battlezone-style vector game running in the simulator](easyzone.png)
+
 ## Sound, MIDI, Serial, Networking
 
 | Subsystem | What it does |
