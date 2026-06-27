@@ -196,7 +196,8 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
     [split addSubview:resScroll];
     // Position the divider once the split view has its real size.
     dispatch_async(dispatch_get_main_queue(), ^{
-        [split setPosition:NSHeight(split.bounds) * 0.74 ofDividerAtIndex:0];
+        // Results pane opens compact (~4 lines); the user can drag it taller.
+        [split setPosition:NSHeight(split.bounds) - 78 ofDividerAtIndex:0];
     });
 
     // --- Status bar ---

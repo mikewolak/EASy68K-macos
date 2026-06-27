@@ -32,6 +32,11 @@ enum { REG_D0 = 0, REG_A0 = 8, REG_US = 16, REG_PC = 17, REG_SR = 18 };
     return self;
 }
 
+// Flipped so that, as the scroll view's document view, the panel pins to the
+// TOP-left of the clip area (a non-flipped doc view sinks to the bottom, which
+// dropped the register grid into the vertical middle of the window).
+- (BOOL)isFlipped { return YES; }
+
 - (NSTextField *)makeField:(int)tag {
     NSTextField *f = [[NSTextField alloc] initWithFrame:NSZeroRect];
     f.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];

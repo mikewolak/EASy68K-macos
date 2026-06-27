@@ -65,6 +65,7 @@ static NSToolbarItemIdentifier const kLog       = @"sim.log";
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
 @property (nonatomic, strong) NSTextField *statusField;
+@property (nonatomic, strong) NSTextField *codeHeader;       // "Disassembly — <prog>"
 @property (nonatomic, strong) dispatch_queue_t simQueue;
 @property (nonatomic, strong) dispatch_semaphore_t inputSem;
 @property (nonatomic, copy)   NSString *pendingInput;
@@ -182,6 +183,44 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     return tv;
 }
 
+// Wrap a content view in a pane with a Finder/Xcode-style titled header strip
+// (subtle bar, semibold label, hairline separator) for clear section division.
+// If headerOut is non-NULL it receives the title label so callers can update it.
+- (NSView *)paneTitled:(NSString *)title content:(NSView *)content headerOut:(NSTextField * __strong *)headerOut {
+    // Pure frame + autoresizing (NO Auto Layout): the pane is an NSSplitView
+    // arranged subview, and mixing Auto Layout here collapses the split.
+    const CGFloat HH = 23, W = 400, H = 400;
+    NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, W, H)];
+    pane.autoresizesSubviews = YES;
+
+    // header strip pinned to the top, full width
+    NSView *hdr = [[NSView alloc] initWithFrame:NSMakeRect(0, H - HH, W, HH)];
+    hdr.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    hdr.wantsLayer = YES;
+    hdr.layer.backgroundColor = [NSColor windowBackgroundColor].CGColor;
+
+    NSTextField *lbl = [NSTextField labelWithString:title];
+    lbl.font = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
+    lbl.textColor = NSColor.secondaryLabelColor;
+    [lbl sizeToFit];
+    lbl.frame = NSMakeRect(10, (HH - NSHeight(lbl.frame)) / 2.0, 300, NSHeight(lbl.frame));
+    lbl.autoresizingMask = NSViewMaxXMargin;
+    [hdr addSubview:lbl];
+
+    NSBox *sep = [[NSBox alloc] initWithFrame:NSMakeRect(0, 0, W, 1)];   // bottom hairline
+    sep.boxType = NSBoxSeparator;
+    sep.autoresizingMask = NSViewWidthSizable;
+    [hdr addSubview:sep];
+
+    content.frame = NSMakeRect(0, 0, W, H - HH);
+    content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [pane addSubview:content];
+    [pane addSubview:hdr];
+
+    if (headerOut) *headerOut = lbl;
+    return pane;
+}
+
 - (void)buildUI {
     NSView *content = self.window.contentView;
 
@@ -207,7 +246,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
                              [weakSelf refreshMemory];
                              [SimMemoryWindowController refreshLiveWindows]; };
     regScroll.documentView = self.regView;
-    [hsplit addSubview:regScroll];
+    [hsplit addSubview:[self paneTitled:@"Registers" content:regScroll headerOut:NULL]];
 
     // Right: vertical split [console] / [memory]
     NSSplitView *vsplit = [[NSSplitView alloc] initWithFrame:content.bounds];
@@ -219,13 +258,13 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     // Sim68K ListBox1. The I/O graphics live in their own window.
     self.listingView = [[SimListingView alloc] initWithFrame:content.bounds];
     self.listingView.listingDelegate = (id)self;
-    [vsplit addSubview:self.listingView];
+    [vsplit addSubview:[self paneTitled:@"Disassembly" content:self.listingView headerOut:&_codeHeader]];
     simlog_set_listing((__bridge void *)self.listingView);   // pretty-print log
 
     // Bottom: memory hex dump
     NSScrollView *memScroll = [[NSScrollView alloc] initWithFrame:content.bounds];
     self.memoryView = MonoTextView(memScroll, NO);
-    [vsplit addSubview:memScroll];
+    [vsplit addSubview:[self paneTitled:@"Memory" content:memScroll headerOut:NULL]];
 
     // The separate I/O window (graphics canvas + console input).
     [self buildIOWindow];
@@ -472,6 +511,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     // resolve relative WAV names (TRAP sound tasks) against the program's folder
     snd_set_base_dir([srecPath stringByDeletingLastPathComponent].fileSystemRepresentation);
     self.window.title = [NSString stringWithFormat:@"Simulator — %@", title];
+    self.codeHeader.stringValue = [NSString stringWithFormat:@"Disassembly — %@", title];
     if (!memory) memory = (char *)calloc(SIM_MEMSIZE, 1);
     exceptions = 1; bitfield = true;
     initSim();
