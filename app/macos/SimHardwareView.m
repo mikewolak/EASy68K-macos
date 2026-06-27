@@ -184,6 +184,21 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     [self addSubview:b];
     return b;
 }
+// A push button that reads clearly on the maroon panels: dark-red bezel, white
+// title (the default light bezel + black text washes out on the red fill).
+- (NSButton *)maroonButton:(NSString *)title frame:(NSRect)f action:(SEL)a {
+    NSButton *b = [NSButton buttonWithTitle:title target:self action:a];
+    b.frame = f; b.bezelStyle = NSBezelStyleRegularSquare; b.bordered = YES;
+    b.wantsLayer = YES;
+    b.layer.backgroundColor = [NSColor colorWithCalibratedRed:0.30 green:0.0 blue:0.0 alpha:1.0].CGColor;
+    b.layer.cornerRadius = 5; b.layer.borderWidth = 1;
+    b.layer.borderColor = [NSColor colorWithCalibratedWhite:1 alpha:0.4].CGColor;
+    b.attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{
+        NSForegroundColorAttributeName: NSColor.whiteColor,
+        NSFontAttributeName: [NSFont systemFontOfSize:12 weight:NSFontWeightMedium] }];
+    return b;
+}
+
 - (NSTextField *)smallLabel:(NSString *)s frame:(NSRect)f in:(NSView *)v {
     return [self smallLabel:s frame:f in:v white:NO];
 }
@@ -225,25 +240,23 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     }
     [self smallLabel:@"Automatic" frame:NSMakeRect(6, 64, 120, 12) in:ic white:YES];
 
-    // ---- Auto Interval group (MAROON) ----
-    NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(212, 232, 132, 92) fill:maroon];
+    // ---- Auto Interval group (MAROON) — wider so "Start" fits inside ----
+    NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(208, 232, 156, 92) fill:maroon];
     NSView *ac = autoBox.contentView;
-    [self smallLabel:@"IRQ" frame:NSMakeRect(8, 48, 26, 14) in:ac white:YES];
-    _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(36, 44, 52, 22)];
+    _autoInterval = [[NSTextField alloc] initWithFrame:NSMakeRect(8, 46, 52, 22)];
+    _autoInterval.stringValue = @"500"; _autoInterval.alignment = NSTextAlignmentRight;
+    [ac addSubview:_autoInterval];
+    [self smallLabel:@"mS" frame:NSMakeRect(64, 49, 24, 14) in:ac white:YES];
+    [self smallLabel:@"IRQ" frame:NSMakeRect(8, 18, 26, 14) in:ac white:YES];
+    _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(34, 14, 50, 24)];
     [_autoIRQ addItemsWithTitles:@[@"1",@"2",@"3",@"4",@"5",@"6",@"7"]];
     [ac addSubview:_autoIRQ];
-    _autoInterval = [[NSTextField alloc] initWithFrame:NSMakeRect(8, 16, 46, 20)];
-    _autoInterval.stringValue = @"500";
-    [ac addSubview:_autoInterval];
-    [self smallLabel:@"mS" frame:NSMakeRect(56, 18, 20, 14) in:ac white:YES];
-    _autoBtn = [NSButton buttonWithTitle:@"Start" target:self action:@selector(autoToggle:)];
-    _autoBtn.frame = NSMakeRect(78, 14, 50, 24); _autoBtn.bezelStyle = NSBezelStyleRounded;
+    _autoBtn = [self maroonButton:@"Start" frame:NSMakeRect(92, 14, 56, 24) action:@selector(autoToggle:)];
     [ac addSubview:_autoBtn];
 
     // ---- Reset group (MAROON) ----
-    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(352, 232, 100, 92) fill:maroon];
-    NSButton *rb = [NSButton buttonWithTitle:@"Reset IRQ" target:self action:@selector(resetIRQ:)];
-    rb.frame = NSMakeRect(12, 24, 76, 32); rb.bezelStyle = NSBezelStyleRounded;
+    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(372, 232, 82, 92) fill:maroon];
+    NSButton *rb = [self maroonButton:@"Reset IRQ" frame:NSMakeRect(6, 30, 70, 30) action:@selector(resetIRQ:)];
     [resetBox.contentView addSubview:rb];
 
     // ---- Memory Map group (GRAY) ----
@@ -273,13 +286,18 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 }
 - (void)resetIRQ:(id)sender { irq = 0; }
 
+- (void)setAutoBtnTitle:(NSString *)t {
+    _autoBtn.attributedTitle = [[NSAttributedString alloc] initWithString:t attributes:@{
+        NSForegroundColorAttributeName: NSColor.whiteColor,
+        NSFontAttributeName: [NSFont systemFontOfSize:12 weight:NSFontWeightMedium] }];
+}
 - (void)autoToggle:(NSButton *)b {
     if (_autoTimer) {
-        [_autoTimer invalidate]; _autoTimer = nil; _autoBtn.title = @"Start";
+        [_autoTimer invalidate]; _autoTimer = nil; [self setAutoBtnTitle:@"Start"];
     } else {
         double ms = MAX(10, _autoInterval.doubleValue);
         int n = (int)_autoIRQ.indexOfSelectedItem + 1;
-        _autoBtn.title = @"Stop";
+        [self setAutoBtnTitle:@"Stop"];
         __weak SimHardwareView *weak = self;
         _autoTimer = [NSTimer scheduledTimerWithTimeInterval:ms/1000.0 repeats:YES block:^(NSTimer *t) {
             irq |= (0x01 << (n - 1));                 // the Auto Interval IRQ
