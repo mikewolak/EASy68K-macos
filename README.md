@@ -107,6 +107,21 @@ A pixel-faithful rebuild of the EASy68K hardware panel (memory-mapped at
   map) — plus an optional **LED afterglow** (smooth trailing glow, toggle in
   *Settings → Hardware LED glow*).
 
+## EASyBIN — binary / S-record utility
+
+A native port of the standalone **EASyBIN v2.5.0** tool (Window → *EASyBIN —
+Binary Utility*), on its own 16 MB buffer:
+
+- **Open** a Motorola S-record or a raw binary (with ÷2/÷4 spread to recombine
+  split EPROM dumps).
+- **Edit** the buffer in an inline hex view (click a byte, type hex, arrow-key
+  navigation).
+- **Save Binary** over a First Address + Length range — raw, or with an EPROM
+  **even/odd (÷2)** or **quad (÷4)** split that writes `_0`/`_1`(/`_2`/`_3`)
+  files for multi-chip sets.
+- **Save S-Record** over a From/To range with a start address (S0 description +
+  S1/S2/S3 data + S7, fully checksummed).
+
 ## Graphics (TRAP #15)
 
 Full canvas: pixel / line / rectangle / ellipse / fill / flood-fill / text /
