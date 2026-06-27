@@ -27,3 +27,5 @@ tests/sim/*.L68
 tests/sim/*.easytmp
 games/easyzone/*.S68
 games/easyzone/*.L68
+signing.env
+build/installer/
