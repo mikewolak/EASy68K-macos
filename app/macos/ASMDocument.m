@@ -28,6 +28,7 @@
 @property (nonatomic, strong) SyntaxHighlighter *highlighter;
 @property (nonatomic, strong) NSArray<ASMDiagnostic *> *diagnostics;
 @property (nonatomic, strong) NSTextField *statusField;
+@property (nonatomic, strong) NSTextField *resultsPlaceholder;
 @end
 
 // Toolbar item identifiers.
@@ -164,7 +165,12 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
     NSTableView *table = [[NSTableView alloc] init];
     table.headerView = nil;
     table.rowSizeStyle = NSTableViewRowSizeStyleSmall;
-    table.usesAlternatingRowBackgroundColors = YES;
+    // No zebra stripes: an empty diagnostics list painted alternating row
+    // backgrounds for the whole pane height, which read as placeholder cards.
+    // Plain background + a centred hint when there are no messages.
+    table.usesAlternatingRowBackgroundColors = NO;
+    table.gridStyleMask = NSTableViewGridNone;
+    table.backgroundColor = NSColor.textBackgroundColor;
     NSTableColumn *col = [[NSTableColumn alloc] initWithIdentifier:@"msg"];
     col.resizingMask = NSTableColumnAutoresizingMask;
     [table addTableColumn:col];
@@ -174,6 +180,18 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
     table.doubleAction = @selector(jumpToDiagnostic:);
     resScroll.documentView = table;
     self.results = table;
+
+    // Centred hint shown while the diagnostics list is empty.
+    NSTextField *ph = [NSTextField labelWithString:@"No messages — ⌘B to assemble"];
+    ph.font = [NSFont systemFontOfSize:11];
+    ph.textColor = NSColor.tertiaryLabelColor;
+    ph.translatesAutoresizingMaskIntoConstraints = NO;
+    [resScroll addSubview:ph];
+    [NSLayoutConstraint activateConstraints:@[
+        [ph.centerXAnchor constraintEqualToAnchor:resScroll.centerXAnchor],
+        [ph.centerYAnchor constraintEqualToAnchor:resScroll.centerYAnchor],
+    ]];
+    self.resultsPlaceholder = ph;
 
     [split addSubview:resScroll];
     // Position the divider once the split view has its real size.
@@ -226,7 +244,7 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
     ASMResult *r = [asm68k assembleSource:self.editor.string workPath:doc.fileURL.path];
 
     self.diagnostics = r.diagnostics;
-    [self.results reloadData];
+    [self refreshResults];
 
     NSString *summary = [NSString stringWithFormat:@"%ld error%@, %ld warning%@%@",
         (long)r.errorCount, r.errorCount == 1 ? @"" : @"s",
@@ -277,6 +295,12 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
 }
 
 #pragma mark Results table
+
+// Reload the diagnostics list and show the centred hint only when it's empty.
+- (void)refreshResults {
+    [self.results reloadData];
+    self.resultsPlaceholder.hidden = (self.diagnostics.count > 0);
+}
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tv { return self.diagnostics.count; }
 
