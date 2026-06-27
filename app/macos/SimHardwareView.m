@@ -151,20 +151,32 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     [self buildLowerSections];
 }
 
-- (NSBox *)groupBox:(NSString *)title frame:(NSRect)f {
+// clMaroon (#800000) and clGray (#808080) — the original hardware panel colors.
++ (NSColor *)maroon { return [NSColor colorWithCalibratedRed:0.50 green:0.0 blue:0.0 alpha:1.0]; }
++ (NSColor *)panelGray { return [NSColor colorWithCalibratedWhite:0.50 alpha:1.0]; }
+
+- (NSBox *)groupBox:(NSString *)title frame:(NSRect)f fill:(NSColor *)fill {
     NSBox *b = [[NSBox alloc] initWithFrame:f];
-    b.title = title; b.titleFont = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
-    // translucent so the brushed-aluminum backdrop shows through
     b.boxType = NSBoxCustom;
-    b.fillColor = [NSColor colorWithCalibratedWhite:1 alpha:0.10];
-    b.borderColor = [NSColor colorWithCalibratedWhite:0 alpha:0.30];
+    b.fillColor = fill;
+    b.borderColor = [NSColor colorWithCalibratedWhite:0 alpha:0.5];
     b.borderWidth = 1; b.cornerRadius = 6;
+    NSFont *tf = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
+    // white box title on the coloured fills (matches Font.Color = clWhite)
+    NSCell *tc = b.titleCell;
+    tc.attributedStringValue = [[NSAttributedString alloc] initWithString:title
+        attributes:@{ NSForegroundColorAttributeName: NSColor.whiteColor, NSFontAttributeName: tf }];
     [self addSubview:b];
     return b;
 }
 - (NSTextField *)smallLabel:(NSString *)s frame:(NSRect)f in:(NSView *)v {
+    return [self smallLabel:s frame:f in:v white:NO];
+}
+- (NSTextField *)smallLabel:(NSString *)s frame:(NSRect)f in:(NSView *)v white:(BOOL)white {
     NSTextField *l = [NSTextField labelWithString:s];
-    l.font = [NSFont systemFontOfSize:10]; l.frame = f; [v addSubview:l]; return l;
+    l.font = [NSFont systemFontOfSize:10]; l.frame = f;
+    if (white) l.textColor = NSColor.whiteColor;
+    [v addSubview:l]; return l;
 }
 - (NSTextField *)hexField:(NSRect)f in:(NSView *)v {
     NSTextField *tf = [[NSTextField alloc] initWithFrame:f];
@@ -174,15 +186,16 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 }
 
 - (void)buildLowerSections {
-    // ---- Interrupt group: seven IRQ buttons (7..1) + per-IRQ "Automatic" ----
-    NSBox *irqBox = [self groupBox:@"Interrupt" frame:NSMakeRect(8, 232, 196, 92)];
+    NSColor *maroon = [SimHardwareView maroon];
+    // ---- Interrupt group (MAROON): seven IRQ buttons + per-IRQ "Automatic" ----
+    NSBox *irqBox = [self groupBox:@"Interrupt" frame:NSMakeRect(8, 232, 196, 92) fill:maroon];
     NSView *ic = irqBox.contentView;
     // buttons are labelled 7..1 left-to-right (matching the .dfm) and momentary.
     for (int col = 0; col < 7; col++) {
         int n = 7 - col;                      // leftmost = IRQ7
         CGFloat x = 4 + col * 26;
         NSTextField *l = [self smallLabel:[NSString stringWithFormat:@"%d", n]
-                                    frame:NSMakeRect(x + 5, 2, 16, 12) in:ic];
+                                    frame:NSMakeRect(x + 5, 2, 16, 12) in:ic white:YES];
         l.alignment = NSTextAlignmentCenter;
         NSButton *pb = [NSButton buttonWithTitle:@"" target:self action:@selector(irqButton:)];
         pb.frame = NSMakeRect(x, 16, 24, 24);
@@ -195,39 +208,42 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
         [ic addSubview:chk];
         _autoChk[n-1] = chk;
     }
-    [self smallLabel:@"Automatic" frame:NSMakeRect(6, 64, 120, 12) in:ic];
+    [self smallLabel:@"Automatic" frame:NSMakeRect(6, 64, 120, 12) in:ic white:YES];
 
-    // ---- Auto Interval group ----
-    NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(212, 232, 132, 92)];
+    // ---- Auto Interval group (MAROON) ----
+    NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(212, 232, 132, 92) fill:maroon];
     NSView *ac = autoBox.contentView;
-    [self smallLabel:@"IRQ" frame:NSMakeRect(8, 48, 26, 14) in:ac];
+    [self smallLabel:@"IRQ" frame:NSMakeRect(8, 48, 26, 14) in:ac white:YES];
     _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(36, 44, 52, 22)];
     [_autoIRQ addItemsWithTitles:@[@"1",@"2",@"3",@"4",@"5",@"6",@"7"]];
     [ac addSubview:_autoIRQ];
     _autoInterval = [[NSTextField alloc] initWithFrame:NSMakeRect(8, 16, 46, 20)];
     _autoInterval.stringValue = @"500";
     [ac addSubview:_autoInterval];
-    [self smallLabel:@"mS" frame:NSMakeRect(56, 18, 20, 14) in:ac];
+    [self smallLabel:@"mS" frame:NSMakeRect(56, 18, 20, 14) in:ac white:YES];
     _autoBtn = [NSButton buttonWithTitle:@"Start" target:self action:@selector(autoToggle:)];
     _autoBtn.frame = NSMakeRect(78, 14, 50, 24); _autoBtn.bezelStyle = NSBezelStyleRounded;
     [ac addSubview:_autoBtn];
 
-    // ---- Reset group ----
-    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(352, 232, 100, 92)];
+    // ---- Reset group (MAROON) ----
+    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(352, 232, 100, 92) fill:maroon];
     NSButton *rb = [NSButton buttonWithTitle:@"Reset IRQ" target:self action:@selector(resetIRQ:)];
     rb.frame = NSMakeRect(12, 24, 76, 32); rb.bezelStyle = NSBezelStyleRounded;
     [resetBox.contentView addSubview:rb];
 
-    // ---- Memory Map group ----
-    NSBox *mapBox = [self groupBox:@"Memory Map" frame:NSMakeRect(8, 332, 406, 150)];
+    // ---- Memory Map group (GRAY) ----
+    NSBox *mapBox = [self groupBox:@"Memory Map" frame:NSMakeRect(8, 332, 406, 150) fill:[SimHardwareView panelGray]];
     NSView *mc = mapBox.contentView;
-    [self smallLabel:@"Start" frame:NSMakeRect(120, 104, 80, 14) in:mc];
-    [self smallLabel:@"End"   frame:NSMakeRect(240, 104, 80, 14) in:mc];
+    [self smallLabel:@"Start" frame:NSMakeRect(120, 104, 80, 14) in:mc white:YES];
+    [self smallLabel:@"End"   frame:NSMakeRect(240, 104, 80, 14) in:mc white:YES];
     NSString *names[4] = {@"ROM", @"Read-only", @"Protected", @"Invalid"};
     for (int i = 0; i < 4; i++) {
         CGFloat y = 78 - i * 26;
         _mapChk[i] = [NSButton checkboxWithTitle:names[i] target:self action:@selector(mapChanged:)];
         _mapChk[i].frame = NSMakeRect(10, y, 100, 20); _mapChk[i].tag = i;
+        _mapChk[i].attributedTitle = [[NSAttributedString alloc] initWithString:names[i]
+            attributes:@{ NSForegroundColorAttributeName: NSColor.whiteColor,
+                          NSFontAttributeName: [NSFont systemFontOfSize:12] }];
         [mc addSubview:_mapChk[i]];
         _mapStart[i] = [self hexField:NSMakeRect(120, y, 100, 20) in:mc];
         _mapEnd[i]   = [self hexField:NSMakeRect(240, y, 100, 20) in:mc];
