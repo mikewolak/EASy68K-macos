@@ -144,25 +144,24 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     }
 
     // ---- Auto Interval group ----
-    NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(212, 232, 118, 92)];
+    NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(212, 232, 132, 92)];
     NSView *ac = autoBox.contentView;
-    [self smallLabel:@"IRQ" frame:NSMakeRect(8, 46, 26, 14) in:ac];
-    _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(34, 42, 50, 22)];
+    [self smallLabel:@"IRQ" frame:NSMakeRect(8, 48, 26, 14) in:ac];
+    _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(36, 44, 52, 22)];
     [_autoIRQ addItemsWithTitles:@[@"1",@"2",@"3",@"4",@"5",@"6",@"7"]];
     [ac addSubview:_autoIRQ];
-    _autoInterval = [[NSTextField alloc] initWithFrame:NSMakeRect(8, 14, 50, 20)];
+    _autoInterval = [[NSTextField alloc] initWithFrame:NSMakeRect(8, 16, 46, 20)];
     _autoInterval.stringValue = @"500";
     [ac addSubview:_autoInterval];
-    [self smallLabel:@"mS" frame:NSMakeRect(60, 16, 22, 14) in:ac];
+    [self smallLabel:@"mS" frame:NSMakeRect(56, 18, 20, 14) in:ac];
     _autoBtn = [NSButton buttonWithTitle:@"Start" target:self action:@selector(autoToggle:)];
-    _autoBtn.frame = NSMakeRect(82, 12, 28, 24); _autoBtn.bezelStyle = NSBezelStyleRounded;
-    _autoBtn.font = [NSFont systemFontOfSize:9];
+    _autoBtn.frame = NSMakeRect(78, 14, 50, 24); _autoBtn.bezelStyle = NSBezelStyleRounded;
     [ac addSubview:_autoBtn];
 
     // ---- Reset group ----
-    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(338, 232, 76, 92)];
-    NSButton *rb = [NSButton buttonWithTitle:@"Reset\nIRQ" target:self action:@selector(resetIRQ:)];
-    rb.frame = NSMakeRect(10, 16, 54, 46); rb.bezelStyle = NSBezelStyleRegularSquare;
+    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(352, 232, 100, 92)];
+    NSButton *rb = [NSButton buttonWithTitle:@"Reset IRQ" target:self action:@selector(resetIRQ:)];
+    rb.frame = NSMakeRect(12, 24, 76, 32); rb.bezelStyle = NSBezelStyleRounded;
     [resetBox.contentView addSubview:rb];
 
     // ---- Memory Map group ----
