@@ -19,6 +19,7 @@
 #import "SimController.h"
 #import "AboutWindowController.h"
 #import "SettingsWindowController.h"
+#import "SimMemoryWindowController.h"
 #import "SimLogController.h"
 #import "SimSoundEngine.h"
 #import "E68Theme.h"
@@ -61,6 +62,7 @@
 - (void)showStackWindow:(id)sender  { [[SimController sharedController] showStackWindow:sender]; }
 - (void)showBreakpointsWindow:(id)sender { [[SimController sharedController] showBreakpointsWindow:sender]; }
 - (void)showHardwareWindow:(id)sender { [[SimController sharedController] showHardwareWindow:sender]; }
+- (void)newMemoryWindow:(id)sender { [SimMemoryWindowController openNewMemoryWindow]; }
 - (void)showLogWindow:(id)sender    { [[SimLogController shared] showLog]; }
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
@@ -191,6 +193,10 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     NSMenuItem *hwWin = Item(@"Hardware", @selector(showHardwareWindow:), @"");
     hwWin.target = self;
     [windowMenu addItem:hwWin];
+    NSMenuItem *memWin = Item(@"New Memory Window", @selector(newMemoryWindow:), @"m");
+    memWin.keyEquivalentModifierMask = NSEventModifierFlagShift | NSEventModifierFlagCommand;
+    memWin.target = self;
+    [windowMenu addItem:memWin];
     NSMenuItem *logWin = Item(@"Execution Log", @selector(showLogWindow:), @"");
     logWin.target = self;
     [windowMenu addItem:logWin];

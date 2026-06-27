@@ -25,6 +25,7 @@
 #import "SimHwBridge.h"
 #import "E68BrushedView.h"
 #import "SimSoundBridge.h"
+#import "SimMemoryWindowController.h"
 #import "SimIntController.h"
 #import "SimLogController.h"
 #import "SimLogBridge.h"
@@ -643,6 +644,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self refreshMemory];
     [self.listingView highlightPC:(uint32_t)PC halted:(halt || !self.running)];
     if (self.stackWindow.isVisible) [self.stackView refresh];
+    [SimMemoryWindowController refreshLiveWindows];   // update any Live memory windows
 }
 
 static NSString *Flags(short sr) {
