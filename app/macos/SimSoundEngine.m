@@ -339,19 +339,25 @@ static NSString *cfStrProp(AudioObjectID obj, AudioObjectPropertySelector sel) {
     return 1;
 }
 
+// SND_NOSTOP: a sound is still playing while the ring holds undrained samples.
+- (BOOL)busy {
+    return atomic_load_explicit(&gWrite, memory_order_acquire) !=
+           atomic_load_explicit(&gRead,  memory_order_acquire);
+}
+
 - (int)playFile:(NSString *)fileName {
     NSValue *val = _byName[fileName];
     Slot s = {NULL, 0};
     if (val) [val getValue:&s];
     else { s = [self decode:[self resolve:fileName]]; if (s.samples) _byName[fileName] = [NSValue valueWithBytes:&s objCType:@encode(Slot)]; }
-    [self stopLoop];
+    if ([self busy]) return 0;                 // SND_NOSTOP: don't restart
     [self pushFrames:s.samples count:s.frames];
     return s.samples ? 1 : 0;
 }
 - (int)playIndex:(int)index {
     if (index < 0 || index >= NSLOTS) return 0;
     Slot s = gSlots[index];
-    [self stopLoop];
+    if ([self busy]) return 0;                 // SND_NOSTOP: don't restart
     [self pushFrames:s.samples count:s.frames];
     return s.samples ? 1 : 0;
 }
@@ -362,8 +368,8 @@ static NSString *cfStrProp(AudioObjectID obj, AudioObjectPropertySelector sel) {
     if (index < 0 || index >= NSLOTS) return;
     Slot s = gSlots[index];
     switch (control) {
-        case 0:                                  // play once
-            [self pushFrames:s.samples count:s.frames];
+        case 0:                                  // play once (SND_NOSTOP)
+            if (![self busy]) [self pushFrames:s.samples count:s.frames];
             break;
         case 1:                                  // start looping
             [self stopLoop];

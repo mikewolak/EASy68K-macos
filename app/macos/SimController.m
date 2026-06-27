@@ -46,7 +46,7 @@ static NSToolbarItemIdentifier const kReload    = @"sim.reload";
 static NSToolbarItemIdentifier const kStack     = @"sim.stack";
 static NSToolbarItemIdentifier const kLog       = @"sim.log";
 
-@interface SimController () <NSToolbarDelegate, NSTextFieldDelegate, SimListingDelegate, SimBreakpointsDelegate>
+@interface SimController () <NSToolbarDelegate, NSTextFieldDelegate, SimListingDelegate, SimBreakpointsDelegate, NSWindowDelegate>
 @property (nonatomic, strong) NSTextView *registersView;
 @property (nonatomic, strong) SimListingView *listingView;   // .L68 source pane
 @property (nonatomic, strong) SimGraphicsView *gfxView;
@@ -265,6 +265,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"Output";
     w.releasedWhenClosed = NO;
+    w.delegate = self;          // close => stop the running program (and its sound)
     [w center];                 // open centered on screen, not bottom-left
     NSView *box = w.contentView;
 
@@ -557,6 +558,15 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     runMode = false; halt = true;
     // Release a pending input wait so the sim thread can unwind.
     dispatch_semaphore_signal(self.inputSem);
+}
+
+// Closing the I/O window halts the running program (so it stops driving graphics
+// and sound) and silences any audio still in flight.
+- (void)windowWillClose:(NSNotification *)note {
+    if (note.object == self.ioWindow) {
+        if (self.running) [self stop:nil];
+        snd_reset();
+    }
 }
 
 // Open a .S68 program from disk into the simulator.
