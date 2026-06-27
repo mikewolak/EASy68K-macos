@@ -188,13 +188,14 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 // title (the default light bezel + black text washes out on the red fill).
 - (NSButton *)maroonButton:(NSString *)title frame:(NSRect)f action:(SEL)a {
     NSButton *b = [NSButton buttonWithTitle:title target:self action:a];
-    b.frame = f; b.bezelStyle = NSBezelStyleRegularSquare; b.bordered = YES;
-    b.wantsLayer = YES;
-    b.layer.backgroundColor = [NSColor colorWithCalibratedRed:0.30 green:0.0 blue:0.0 alpha:1.0].CGColor;
-    b.layer.cornerRadius = 5; b.layer.borderWidth = 1;
-    b.layer.borderColor = [NSColor colorWithCalibratedWhite:1 alpha:0.4].CGColor;
+    b.frame = f;
+    b.bezelStyle = NSBezelStyleRounded;     // vertically centres its title
+    b.bezelColor = [NSColor colorWithCalibratedRed:0.34 green:0.02 blue:0.02 alpha:1.0];
+    NSMutableParagraphStyle *ps = [NSMutableParagraphStyle new];
+    ps.alignment = NSTextAlignmentCenter;
     b.attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{
         NSForegroundColorAttributeName: NSColor.whiteColor,
+        NSParagraphStyleAttributeName: ps,
         NSFontAttributeName: [NSFont systemFontOfSize:12 weight:NSFontWeightMedium] }];
     return b;
 }
@@ -250,14 +251,20 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     [self smallLabel:@"IRQ" frame:NSMakeRect(8, 18, 26, 14) in:ac white:YES];
     _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(34, 14, 50, 24)];
     [_autoIRQ addItemsWithTitles:@[@"1",@"2",@"3",@"4",@"5",@"6",@"7"]];
+    _autoIRQ.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];  // light + readable
     [ac addSubview:_autoIRQ];
     _autoBtn = [self maroonButton:@"Start" frame:NSMakeRect(92, 14, 56, 24) action:@selector(autoToggle:)];
     [ac addSubview:_autoBtn];
 
-    // ---- Reset group (MAROON) ----
-    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(372, 232, 82, 92) fill:maroon];
-    NSButton *rb = [self maroonButton:@"Reset IRQ" frame:NSMakeRect(6, 30, 70, 30) action:@selector(resetIRQ:)];
-    [resetBox.contentView addSubview:rb];
+    // ---- Reset group (MAROON) — button centred in the box's content area ----
+    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(368, 232, 86, 92) fill:maroon];
+    NSView *rc = resetBox.contentView;
+    NSButton *rb = [self maroonButton:@"Reset IRQ" frame:NSZeroRect action:@selector(resetIRQ:)];
+    CGFloat bw = 74, bh = 28;
+    CGFloat cw = rc.bounds.size.width, chh = rc.bounds.size.height;
+    if (cw < 10 || chh < 10) { cw = 78; chh = 66; }   // box not laid out yet — use known geometry
+    rb.frame = NSMakeRect((cw - bw) / 2.0, (chh - bh) / 2.0 - 5, bw, bh);   // -5: visually centre below the title
+    [rc addSubview:rb];
 
     // ---- Memory Map group (GRAY) ----
     NSBox *mapBox = [self groupBox:@"Memory Map" frame:NSMakeRect(8, 332, 406, 150) fill:[SimHardwareView panelGray]];
