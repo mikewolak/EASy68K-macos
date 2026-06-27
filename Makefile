@@ -114,7 +114,7 @@ $(APP): $(MACOS_M) $(MACOS_C) app/macos/Info.plist $(LIBASM) $(LIBCOMMON) $(SIMC
 	cp app/macos/logo.png $(APP)/Contents/Resources/logo.png
 	cp app/macos/assets/*.png $(APP)/Contents/Resources/ 2>/dev/null || true
 	$(CC) -fobjc-arc -fmodules $(CPPFLAGS) -framework Cocoa -framework CoreVideo \
-	    -framework AVFoundation -framework AudioToolbox -framework CoreAudio \
+	    -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework CoreMIDI \
 	    $(MACOS_M) $(MACOS_C) $(SIMCORE_COMBINED) $(LIBASM) $(LIBCOMMON) -o $(APP_EXE)
 	@echo "built $(APP)"
 

@@ -162,6 +162,13 @@ int  simHardwareSwitchAddr(void)              { return 0; }
 int  simHardwarePbAddr(void)                  { return 0; }
 void simHardwareSetMap(int kind, int s, int e){ (void)kind; (void)s; (void)e; }
 
+// MIDI is a GUI/CoreMIDI feature; the headless CLI has no MIDI.
+int simMIDI(int op, int arg, char *buf, int buflen)
+{
+    (void)op; (void)arg; (void)buf; (void)buflen;
+    return 0;
+}
+
 void install_cli_host(void)
 {
     simIO = &cli_io;

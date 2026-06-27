@@ -179,4 +179,10 @@ void simHardwareSetMap(int kind, int start, int end);
  * ------------------------------------------------------------------ */
 void install_cli_host(void);
 
+// MIDI I/O TRAP (task 120, EASy68K-macOS extension). op selects the function
+// (0 init/#dest, 1 dest name, 2 open dest, 3 send, 4 #src, 5 src name, 6 open
+// src, 7 receive, 8 hot-plug changed); arg is an index/length; buf is the
+// program's memory buffer. Returns a per-op result (count / bytes / flag).
+int simMIDI(int op, int arg, char *buf, int buflen);
+
 #endif

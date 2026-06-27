@@ -1193,6 +1193,12 @@ int TRAP()
       case 107:                  // if Receive data and port
         simIO->receivePortNet(&D[0], &D[1], &memory[A[1] & ADDRMASK], &memory[A[2] & ADDRMASK]);
         break;
+      case 120:                  // MIDI I/O (EASy68K-macOS extension)
+        // D1.B = function, D2 = index/length, A1 = buffer. Returns the result
+        // (device count / bytes sent or received / hot-plug flag) in D0.
+        D[0] = simMIDI((int)(D[1] & 0xFF), (int)D[2],
+                       (char *)&memory[A[1] & ADDRMASK], 256);
+        break;
       default:
         return (TRAP_TRAP);
     } // switch
