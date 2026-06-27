@@ -14,6 +14,7 @@
 //  SimMidiEngine.m
 //
 #import "SimMidiEngine.h"
+#import "SimIntController.h"
 #import <CoreMIDI/CoreMIDI.h>
 #include <stdatomic.h>
 
@@ -98,11 +99,14 @@ static void midiRead(const MIDIPacketList *pkts, void *ctx, void *srcRef);
     int n = len > 256 ? 256 : len;
     pkt = MIDIPacketListAdd(pl, sizeof(storage), pkt, 0, n, bytes);
     if (!pkt) return 0;
-    return MIDISend(_outPort, _dest, pl) == noErr ? n : 0;
+    int sent = MIDISend(_outPort, _dest, pl) == noErr ? n : 0;
+    simIntNotify(SIM_INT_MIDI_TX);    // transmitter ready again (no-op if disabled)
+    return sent;
 }
 
 - (void)enqueueRX:(const unsigned char *)bytes length:(int)len {
     [_rxLock lock]; [_rxQueue appendBytes:bytes length:len]; [_rxLock unlock];
+    simIntNotify(SIM_INT_MIDI_RX);    // data received (no-op if disabled)
 }
 - (int)receiveInto:(unsigned char *)buf max:(int)max {
     if (!buf || max <= 0) return 0;

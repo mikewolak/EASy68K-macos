@@ -18,9 +18,15 @@
 #import "E68BrushedView.h"
 #import "SimSoundEngine.h"
 #import "SimMidiEngine.h"
+#import "SimSerialEngine.h"
 
 #define K_MIDI_IN_NAME  @"MidiInputName"
 #define K_MIDI_OUT_NAME @"MidiOutputName"
+
+// EASy68K baud-index labels (index = item position; 7 = 9600)
+static NSString * const kBaudNames[] = {
+    @"9600 (default)", @"110", @"300", @"600", @"1200", @"2400", @"4800",
+    @"9600", @"19200", @"38400", @"56000", @"57600", @"115200", @"128000", @"256000" };
 
 @implementation SettingsWindowController {
     NSSlider      *_fontSlider;
@@ -30,6 +36,8 @@
     NSPopUpButton *_rightChPopup;
     NSPopUpButton *_midiInPopup;
     NSPopUpButton *_midiOutPopup;
+    NSPopUpButton *_serialPortPopup;
+    NSPopUpButton *_baudPopup;
 }
 
 + (void)showSettings {
@@ -47,7 +55,7 @@
 - (void)buildIfNeeded {
     if (self.window) return;
 
-    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 500, 400)
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 500, 470)
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"Settings";
@@ -93,7 +101,7 @@
     sep2.boxType = NSBoxSeparator; sep2.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:sep2];
 
-    NSTextField *amLbl = [NSTextField labelWithString:@"Audio & MIDI"];
+    NSTextField *amLbl = [NSTextField labelWithString:@"Audio, MIDI & Serial"];
     amLbl.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
     amLbl.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:amLbl];
@@ -107,9 +115,18 @@
     _midiInPopup = [self popupAction:@selector(midiInputChanged:)];
     NSTextField *midiOutLbl = [self formLabel:@"MIDI output"];
     _midiOutPopup = [self popupAction:@selector(midiOutputChanged:)];
+    NSTextField *serLbl = [self formLabel:@"Serial port"];
+    _serialPortPopup = [self popupAction:@selector(serialPortChanged:)];
+    NSTextField *baudLbl = [self formLabel:@"Baud rate"];
+    _baudPopup = [self popupAction:@selector(baudChanged:)];
     for (NSView *v in @[devLbl, _audioDevicePopup, chLbl, _leftChPopup, _rightChPopup,
-                        midiLbl, _midiInPopup, midiOutLbl, _midiOutPopup])
+                        midiLbl, _midiInPopup, midiOutLbl, _midiOutPopup,
+                        serLbl, _serialPortPopup, baudLbl, _baudPopup])
         [root addSubview:v];
+
+    // hot-plug: refresh the serial-port list when a USB device appears/disappears
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(populateSerial)
+                                                 name:E68SerialPortsChangedNotification object:nil];
 
     NSTextField *hint = [NSTextField labelWithString:@"Tip: ⌘+ / ⌘− to resize, ⌘0 to reset."];
     hint.font = [NSFont systemFontOfSize:11];
@@ -179,6 +196,20 @@
         [_midiOutPopup.centerYAnchor constraintEqualToAnchor:midiOutLbl.centerYAnchor],
         [_midiOutPopup.leadingAnchor constraintEqualToAnchor:midiOutLbl.trailingAnchor constant:10],
         [_midiOutPopup.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-20],
+
+        [serLbl.topAnchor constraintEqualToAnchor:midiOutLbl.bottomAnchor constant:12],
+        [serLbl.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:20],
+        [serLbl.widthAnchor constraintEqualToConstant:90],
+        [_serialPortPopup.centerYAnchor constraintEqualToAnchor:serLbl.centerYAnchor],
+        [_serialPortPopup.leadingAnchor constraintEqualToAnchor:serLbl.trailingAnchor constant:10],
+        [_serialPortPopup.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-20],
+
+        [baudLbl.topAnchor constraintEqualToAnchor:serLbl.bottomAnchor constant:12],
+        [baudLbl.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:20],
+        [baudLbl.widthAnchor constraintEqualToConstant:90],
+        [_baudPopup.centerYAnchor constraintEqualToAnchor:baudLbl.centerYAnchor],
+        [_baudPopup.leadingAnchor constraintEqualToAnchor:baudLbl.trailingAnchor constant:10],
+        [_baudPopup.widthAnchor constraintEqualToConstant:165],
     ]];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(syncFromTheme)
@@ -235,6 +266,27 @@
         [_midiOutPopup addItemWithTitle:name];
         if ([name isEqualToString:savedOut]) [_midiOutPopup selectItemWithTitle:name];
     }
+
+    [self populateSerial];
+}
+
+- (void)populateSerial {
+    SimSerialEngine *ser = [SimSerialEngine shared];
+    // serial ports (hot-plug refreshed)
+    [_serialPortPopup removeAllItems];
+    [_serialPortPopup addItemWithTitle:@"None"];
+    NSString *sel = ser.selectedPortPath;
+    for (NSDictionary *d in [ser availablePorts]) {
+        [_serialPortPopup addItemWithTitle:d[@"name"]];
+        _serialPortPopup.lastItem.representedObject = d[@"path"];
+        if ([d[@"path"] isEqualToString:sel]) [_serialPortPopup selectItem:_serialPortPopup.lastItem];
+    }
+    // baud rates
+    [_baudPopup removeAllItems];
+    for (int i = 0; i < (int)(sizeof(kBaudNames)/sizeof(kBaudNames[0])); i++)
+        [_baudPopup addItemWithTitle:kBaudNames[i]];
+    if (ser.baudIndex >= 0 && ser.baudIndex < _baudPopup.numberOfItems)
+        [_baudPopup selectItemAtIndex:ser.baudIndex];
 }
 
 - (void)populateChannels {
@@ -269,6 +321,13 @@
     if (p.indexOfSelectedItem <= 0) { [u removeObjectForKey:K_MIDI_OUT_NAME]; return; }
     [u setObject:p.titleOfSelectedItem forKey:K_MIDI_OUT_NAME];
     [[SimMidiEngine shared] openDestination:(int)(p.indexOfSelectedItem - 1)];
+}
+- (void)serialPortChanged:(NSPopUpButton *)p {
+    [SimSerialEngine shared].selectedPortPath =
+        (p.indexOfSelectedItem <= 0) ? nil : p.selectedItem.representedObject;   // 0 = None
+}
+- (void)baudChanged:(NSPopUpButton *)p {
+    [SimSerialEngine shared].baudIndex = (int)p.indexOfSelectedItem;
 }
 
 // Called from the app delegate at launch: re-open the remembered MIDI input

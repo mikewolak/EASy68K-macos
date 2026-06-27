@@ -1199,6 +1199,12 @@ int TRAP()
         D[0] = simMIDI((int)(D[1] & 0xFF), (int)D[2],
                        (char *)&memory[A[1] & ADDRMASK], 256);
         break;
+      case 121:                  // Device I/O interrupt control (macOS extension)
+        // D1.B = function (0 off, 1 on), D2.B = source (0 MIDI-RX, 1 MIDI-TX,
+        // 2 Serial-RX, 3 Serial-TX), D3.B = autovector IRQ level 1-7.
+        simIOIntControl((int)(D[1] & 0xFF), (int)(D[2] & 0xFF), (int)(D[3] & 0xFF));
+        D[0] = 0;
+        break;
       default:
         return (TRAP_TRAP);
     } // switch

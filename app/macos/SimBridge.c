@@ -28,6 +28,12 @@
 #include "SimHwBridge.h"      // memory-mapped LEDs/7-seg/switches Hardware window
 #include "SimSoundBridge.h"   // low-latency ring-buffer audio for TRAP sound tasks
 #include "net.h"              // BSD-socket networking for TRAP net tasks (100-107)
+#include "SimSerialBridge.h"  // termios serial for TRAP comm tasks (40-43)
+#include "SimIntController.h" // MIDI/serial I/O interrupt control (TRAP task 121)
+
+// Device I/O interrupt control (TRAP task 121): map func/source/level to the
+// interrupt controller. func 0=disable 1=enable; source 0-3; level 1-7.
+void simIOIntControl(int func, int source, int level) { simIntConfig(source, func, level); }
 
 extern int PC;               // current program counter (globals.c, int32_t)
 
@@ -92,10 +98,12 @@ static void io_loadSoundDX(char*f,int i,short*r){ snd_load(f,i); if(r)*r=0; }
 static void io_playSoundMemDX(int i,short*r){ int ok=snd_play_index(i); if(r)*r=ok?0:1; }
 static void io_controlSoundDX(int c,int i,short*r){ snd_control(c,i); if(r)*r=0; }
 static void io_ResetSounds(void){ snd_reset(); }
-static void io_initComm(int c,char*p,short*r){(void)c;(void)p; if(r)*r=0;}
-static void io_setCommParams(int c,int s,short*r){(void)c;(void)s; if(r)*r=0;}
-static void io_readComm(int c,uchar*n,char*s,short*r){(void)c;(void)n;(void)s; if(r)*r=0;}
-static void io_sendComm(int c,uchar*n,char*s,short*r){(void)c;(void)n;(void)s; if(r)*r=0;}
+// Serial comm (TRAP #15 tasks 40-43) -> termios SimSerialEngine. The port and
+// baud come from Settings (hot-plug aware) unless the program passes a /dev path.
+static void io_initComm(int c,char*p,short*r){ int res=ser_open(c,p); if(r)*r=(short)res; }
+static void io_setCommParams(int c,int s,short*r){ int res=ser_setparams(c,s); if(r)*r=(short)res; }
+static void io_readComm(int c,uchar*n,char*s,short*r){ int res=ser_read(c,s,n); if(r)*r=(short)res; }
+static void io_sendComm(int c,uchar*n,char*s,short*r){ int res=ser_send(c,s,n); if(r)*r=(short)res; }
 // Networking (TRAP #15 tasks 100-107) -> BSD-socket net.c. The `settings`
 // word packs the connection type (low byte) and port (high word); send/recv
 // pack the byte count (low word).

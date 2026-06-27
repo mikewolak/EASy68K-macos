@@ -169,6 +169,12 @@ int simMIDI(int op, int arg, char *buf, int buflen)
     return 0;
 }
 
+// Device I/O interrupts are a GUI feature; the headless CLI has none.
+void simIOIntControl(int func, int source, int level)
+{
+    (void)func; (void)source; (void)level;
+}
+
 void install_cli_host(void)
 {
     simIO = &cli_io;

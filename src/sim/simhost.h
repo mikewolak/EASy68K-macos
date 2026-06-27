@@ -185,4 +185,11 @@ void install_cli_host(void);
 // program's memory buffer. Returns a per-op result (count / bytes / flag).
 int simMIDI(int op, int arg, char *buf, int buflen);
 
+// Device I/O interrupt control (task 121, EASy68K-macOS extension).
+//   func   = 0 disable, 1 enable
+//   source = 0 MIDI RX, 1 MIDI TX, 2 Serial RX, 3 Serial TX
+//   level  = autovector IRQ level 1-7 (used when enabling)
+// All four are disabled at reset; the program turns them on/off as needed.
+void simIOIntControl(int func, int source, int level);
+
 #endif
