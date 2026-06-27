@@ -260,11 +260,14 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(368, 232, 86, 92) fill:maroon];
     NSView *rc = resetBox.contentView;
     NSButton *rb = [self maroonButton:@"Reset IRQ" frame:NSZeroRect action:@selector(resetIRQ:)];
-    CGFloat bw = 74, bh = 28;
-    CGFloat cw = rc.bounds.size.width, chh = rc.bounds.size.height;
-    if (cw < 10 || chh < 10) { cw = 78; chh = 66; }   // box not laid out yet — use known geometry
-    rb.frame = NSMakeRect((cw - bw) / 2.0, (chh - bh) / 2.0 - 5, bw, bh);   // -5: visually centre below the title
+    rb.translatesAutoresizingMaskIntoConstraints = NO;
     [rc addSubview:rb];
+    [NSLayoutConstraint activateConstraints:@[      // exact centre, layout-time-independent
+        [rb.centerXAnchor constraintEqualToAnchor:rc.centerXAnchor],
+        [rb.centerYAnchor constraintEqualToAnchor:rc.centerYAnchor],
+        [rb.widthAnchor constraintEqualToConstant:74],
+        [rb.heightAnchor constraintEqualToConstant:28],
+    ]];
 
     // ---- Memory Map group (GRAY) ----
     NSBox *mapBox = [self groupBox:@"Memory Map" frame:NSMakeRect(8, 332, 406, 150) fill:[SimHardwareView panelGray]];
