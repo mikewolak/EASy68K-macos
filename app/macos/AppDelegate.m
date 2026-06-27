@@ -21,6 +21,7 @@
 #import "SettingsWindowController.h"
 #import "SimMemoryWindowController.h"
 #import "SimLogController.h"
+#import "EASyBINController.h"
 #import "SimSoundEngine.h"
 #import "E68Theme.h"
 
@@ -74,6 +75,7 @@
 - (void)showHardwareWindow:(id)sender { [[SimController sharedController] showHardwareWindow:sender]; }
 - (void)newMemoryWindow:(id)sender { [SimMemoryWindowController openNewMemoryWindow]; }
 - (void)showLogWindow:(id)sender    { [[SimLogController shared] showLog]; }
+- (void)showEASyBIN:(id)sender      { [[EASyBINController shared] showBIN]; }
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
 
@@ -256,6 +258,9 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     NSMenuItem *logWin = Item(@"Execution Log", @selector(showLogWindow:), @"");
     logWin.target = self;
     [windowMenu addItem:logWin];
+    NSMenuItem *binWin = Item(@"EASyBIN — Binary Utility", @selector(showEASyBIN:), @"");
+    binWin.target = self;
+    [windowMenu addItem:binWin];
     [windowMenu addItem:[NSMenuItem separatorItem]];
     [windowMenu addItem:Item(@"Bring All to Front", @selector(arrangeInFront:), @"")];
     NSApp.windowsMenu = windowMenu;
