@@ -33,6 +33,14 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     NSTextField *_seg7Field, *_ledField, *_switchField, *_pbField;
     uint8_t      _segVal[8];
     uint8_t      _ledVal;
+    // memory map editor
+    NSButton    *_mapChk[4];
+    NSTextField *_mapStart[4], *_mapEnd[4];
+    // auto interrupt
+    NSPopUpButton *_autoIRQ;
+    NSTextField   *_autoInterval;
+    NSButton      *_autoBtn;
+    NSTimer       *_autoTimer;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -69,15 +77,17 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 
 - (void)buildControls {
     NSImage *off = [self image:@"switch_off"], *on = [self image:@"switch_on"];
-    // eight toggle switches — switch7 (bit7) leftmost … switch0 (bit0) rightmost
+    // eight toggle switches — switch7 (bit7) leftmost … switch0 (bit0) rightmost.
+    // NSButtonTypeToggle persistently shows the alternate (on) image while the
+    // button's state is on, so the switch visibly stays flipped.
     for (int b = 7; b >= 0; b--) {
         CGFloat x = 16 + 40 * (7 - b);
-        NSButton *sw = [[NSButton alloc] initWithFrame:NSMakeRect(x, 132, 29, 45)];
-        sw.buttonType = NSButtonTypePushOnPushOff;
-        sw.bordered = NO; sw.imagePosition = NSImageOnly;
+        NSButton *sw = [[NSButton alloc] initWithFrame:NSMakeRect(x, 130, 29, 45)];
+        sw.buttonType = NSButtonTypeToggle;
+        sw.bordered = NO; sw.imagePosition = NSImageOnly; sw.imageScaling = NSImageScaleProportionallyUpOrDown;
         sw.image = off; sw.alternateImage = on ?: off;
         sw.tag = b; sw.target = self; sw.action = @selector(switchToggled:);
-        sw.toolTip = [NSString stringWithFormat:@"Switch %d (bit %d)", b, b];
+        sw.toolTip = [NSString stringWithFormat:@"Switch %d (bit %d) — click to toggle", b, b];
         _switch[b] = sw;
         [self addSubview:sw];
     }
@@ -88,22 +98,123 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     NSString *caps[4] = {@"7-Seg", @"LEDs", @"Switch", @"Buttons"};
     uint32_t vals[4] = {_seg7Addr, _ledAddr, _switchAddr, _pbAddr};
     for (int i = 0; i < 4; i++) {
-        NSTextField *cap = [NSTextField labelWithString:caps[i]];
+        // Caption above each field (the field IS the address) — no separate
+        // "Address:" label, which would collide with the last switch.
+        NSTextField *cap = [NSTextField labelWithString:[caps[i] stringByAppendingString:@" Address"]];
         cap.font = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
-        cap.frame = NSMakeRect(346, ys[i] - 17, 70, 14);
+        cap.frame = NSMakeRect(344, ys[i] - 17, 76, 14);
         [self addSubview:cap];
-        NSTextField *al = [NSTextField labelWithString:@"Address:"];
-        al.font = [NSFont systemFontOfSize:10];
-        al.textColor = NSColor.secondaryLabelColor;
-        al.frame = NSMakeRect(282, ys[i] + 3, 58, 13);
-        al.alignment = NSTextAlignmentRight;
-        [self addSubview:al];
         NSTextField *field = [self addrFieldAt:344 y:ys[i] value:vals[i]];
         if (i == 0) _seg7Field = field;
         else if (i == 1) _ledField = field;
         else if (i == 2) _switchField = field;
         else _pbField = field;
     }
+    [self buildLowerSections];
+}
+
+- (NSBox *)groupBox:(NSString *)title frame:(NSRect)f {
+    NSBox *b = [[NSBox alloc] initWithFrame:f];
+    b.title = title; b.titleFont = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
+    [self addSubview:b];
+    return b;
+}
+- (NSTextField *)smallLabel:(NSString *)s frame:(NSRect)f in:(NSView *)v {
+    NSTextField *l = [NSTextField labelWithString:s];
+    l.font = [NSFont systemFontOfSize:10]; l.frame = f; [v addSubview:l]; return l;
+}
+- (NSTextField *)hexField:(NSRect)f in:(NSView *)v {
+    NSTextField *tf = [[NSTextField alloc] initWithFrame:f];
+    tf.font = [NSFont monospacedSystemFontOfSize:10 weight:NSFontWeightRegular];
+    tf.stringValue = @"00000000"; tf.target = self; tf.action = @selector(mapChanged:);
+    [v addSubview:tf]; return tf;
+}
+
+- (void)buildLowerSections {
+    // ---- Interrupt group: seven IRQ push buttons (1..7) ----
+    NSBox *irqBox = [self groupBox:@"Interrupt" frame:NSMakeRect(8, 232, 196, 92)];
+    NSView *ic = irqBox.contentView;
+    for (int n = 1; n <= 7; n++) {
+        NSButton *pb = [NSButton buttonWithTitle:[NSString stringWithFormat:@"%d", n]
+                                          target:self action:@selector(irqButton:)];
+        pb.frame = NSMakeRect(6 + (n-1)*26, 20, 24, 38);
+        pb.bezelStyle = NSBezelStyleSmallSquare; pb.tag = n;
+        pb.toolTip = [NSString stringWithFormat:@"Trigger IRQ %d", n];
+        [ic addSubview:pb];
+    }
+
+    // ---- Auto Interval group ----
+    NSBox *autoBox = [self groupBox:@"Auto Interval" frame:NSMakeRect(212, 232, 118, 92)];
+    NSView *ac = autoBox.contentView;
+    [self smallLabel:@"IRQ" frame:NSMakeRect(8, 46, 26, 14) in:ac];
+    _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(34, 42, 50, 22)];
+    [_autoIRQ addItemsWithTitles:@[@"1",@"2",@"3",@"4",@"5",@"6",@"7"]];
+    [ac addSubview:_autoIRQ];
+    _autoInterval = [[NSTextField alloc] initWithFrame:NSMakeRect(8, 14, 50, 20)];
+    _autoInterval.stringValue = @"500";
+    [ac addSubview:_autoInterval];
+    [self smallLabel:@"mS" frame:NSMakeRect(60, 16, 22, 14) in:ac];
+    _autoBtn = [NSButton buttonWithTitle:@"Start" target:self action:@selector(autoToggle:)];
+    _autoBtn.frame = NSMakeRect(82, 12, 28, 24); _autoBtn.bezelStyle = NSBezelStyleRounded;
+    _autoBtn.font = [NSFont systemFontOfSize:9];
+    [ac addSubview:_autoBtn];
+
+    // ---- Reset group ----
+    NSBox *resetBox = [self groupBox:@"Reset" frame:NSMakeRect(338, 232, 76, 92)];
+    NSButton *rb = [NSButton buttonWithTitle:@"Reset\nIRQ" target:self action:@selector(resetIRQ:)];
+    rb.frame = NSMakeRect(10, 16, 54, 46); rb.bezelStyle = NSBezelStyleRegularSquare;
+    [resetBox.contentView addSubview:rb];
+
+    // ---- Memory Map group ----
+    NSBox *mapBox = [self groupBox:@"Memory Map" frame:NSMakeRect(8, 332, 406, 150)];
+    NSView *mc = mapBox.contentView;
+    [self smallLabel:@"Start" frame:NSMakeRect(120, 104, 80, 14) in:mc];
+    [self smallLabel:@"End"   frame:NSMakeRect(240, 104, 80, 14) in:mc];
+    NSString *names[4] = {@"ROM", @"Read-only", @"Protected", @"Invalid"};
+    for (int i = 0; i < 4; i++) {
+        CGFloat y = 78 - i * 26;
+        _mapChk[i] = [NSButton checkboxWithTitle:names[i] target:self action:@selector(mapChanged:)];
+        _mapChk[i].frame = NSMakeRect(10, y, 100, 20); _mapChk[i].tag = i;
+        [mc addSubview:_mapChk[i]];
+        _mapStart[i] = [self hexField:NSMakeRect(120, y, 100, 20) in:mc];
+        _mapEnd[i]   = [self hexField:NSMakeRect(240, y, 100, 20) in:mc];
+    }
+}
+
+#pragma mark interrupt + map actions
+
+- (void)irqButton:(NSButton *)b {
+    int n = (int)b.tag;
+    if (n >= 1 && n <= 7) irq |= (0x01 << (n - 1));   // pend IRQ n (run.c services it)
+}
+- (void)resetIRQ:(id)sender { irq = 0; }
+
+- (void)autoToggle:(NSButton *)b {
+    if (_autoTimer) {
+        [_autoTimer invalidate]; _autoTimer = nil; _autoBtn.title = @"Start";
+    } else {
+        double ms = MAX(10, _autoInterval.doubleValue);
+        int n = (int)_autoIRQ.indexOfSelectedItem + 1;
+        _autoBtn.title = @"Stop";
+        _autoTimer = [NSTimer scheduledTimerWithTimeInterval:ms/1000.0 repeats:YES block:^(NSTimer *t) {
+            irq |= (0x01 << (n - 1));
+        }];
+    }
+}
+
+- (void)mapChanged:(id)sender {
+    int starts[4], ends[4]; bool en[4];
+    for (int i = 0; i < 4; i++) {
+        unsigned s = 0, e = 0;
+        sscanf(_mapStart[i].stringValue.UTF8String ?: "0", "%x", &s);
+        sscanf(_mapEnd[i].stringValue.UTF8String ?: "0", "%x", &e);
+        starts[i] = (int)(s & ADDRMASK); ends[i] = (int)(e & ADDRMASK);
+        en[i] = (_mapChk[i].state == NSControlStateValueOn);
+    }
+    ROMStart = starts[0]; ROMEnd = ends[0]; ROMMap = en[0];
+    ReadStart = starts[1]; ReadEnd = ends[1]; ReadMap = en[1];
+    ProtectedStart = starts[2]; ProtectedEnd = ends[2]; ProtectedMap = en[2];
+    InvalidStart = starts[3]; InvalidEnd = ends[3]; InvalidMap = en[3];
 }
 
 #pragma mark drawing — panels, LEDs, 7-segment digits

@@ -50,6 +50,13 @@ extern int       brkpt[100];
 extern char      bpoints;
 extern int       runToAddr;
 
+// Hardware: pending interrupt bits, and the memory map (ROM/Read/Protected/
+// Invalid regions checked by memoryMapCheck()).
+extern int       irq;
+extern int       ROMStart, ROMEnd, ReadStart, ReadEnd;
+extern int       ProtectedStart, ProtectedEnd, InvalidStart, InvalidEnd;
+extern bool      ROMMap, ReadMap, ProtectedMap, InvalidMap;
+
 #ifdef __cplusplus
 }
 #endif
