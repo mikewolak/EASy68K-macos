@@ -60,6 +60,8 @@ static NSToolbarItemIdentifier const kLog       = @"sim.log";
 @property (nonatomic, strong) NSWindow *hwWindow;         // Hardware window
 @property (nonatomic, strong) SimHardwareView *hwView;
 @property (nonatomic, strong) NSTimer *autoTraceTimer;     // AutoTrace animation
+@property (nonatomic) int autoTraceMs;                     // AutoTrace interval (ms)
+@property (nonatomic) BOOL autoTraceDisableDisplay;        // skip display refresh
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
 @property (nonatomic, strong) NSTextField *statusField;
@@ -547,14 +549,91 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self startTrace:NO sstep:NO stopAt:(int64_t)target verb:@"At cursor"];
 }
 
+// Search > Goto PC: scroll the listing to the current program counter.
+- (void)gotoPC:(id)sender {
+    [self.listingView highlightPC:(uint32_t)PC halted:YES];
+    [self.window makeKeyAndOrderFront:nil];
+}
+
+// Search > Find in Memory: search for a hex byte sequence ("12 AB") or, with a
+// leading ", an ASCII string. Reports the first match at/after the start address.
+- (void)findInMemory:(id)sender {
+    if (!memory) return;
+    NSAlert *al = [NSAlert new];
+    al.messageText = @"Find in memory";
+    al.informativeText = @"Hex bytes (e.g. 4E 75) or \"text  —  starting at $address:";
+    NSView *acc = [[NSView alloc] initWithFrame:NSMakeRect(0,0,260,52)];
+    NSTextField *pat = [[NSTextField alloc] initWithFrame:NSMakeRect(0,28,260,24)];
+    NSTextField *from = [[NSTextField alloc] initWithFrame:NSMakeRect(0,0,260,24)];
+    pat.placeholderString = @"4E 75   or   \"HELLO"; from.placeholderString = @"start $ (blank = 0)";
+    [acc addSubview:pat]; [acc addSubview:from];
+    al.accessoryView = acc;
+    [al addButtonWithTitle:@"Find"]; [al addButtonWithTitle:@"Cancel"];
+    if ([al runModal] != NSAlertFirstButtonReturn) return;
+
+    // build the needle
+    NSMutableData *needle = [NSMutableData data];
+    NSString *p = [pat.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    if ([p hasPrefix:@"\""]) {
+        const char *s = [p substringFromIndex:1].UTF8String;
+        [needle appendBytes:s length:strlen(s)];
+    } else {
+        for (NSString *tok in [p componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet]) {
+            if (!tok.length) continue;
+            unsigned char b = (unsigned char)strtoul(tok.UTF8String, NULL, 16);
+            [needle appendBytes:&b length:1];
+        }
+    }
+    if (!needle.length) return;
+
+    uint32_t start = (uint32_t)(strtoul([from.stringValue stringByReplacingOccurrencesOfString:@"$" withString:@""].UTF8String, NULL, 16) & (SIM_MEMSIZE-1));
+    const unsigned char *n = needle.bytes; NSUInteger nl = needle.length;
+    for (uint32_t a = start; a + nl <= SIM_MEMSIZE; a++) {
+        if (memcmp(&memory[a], n, nl) == 0) {
+            self.statusField.stringValue = [NSString stringWithFormat:@"Found at $%06X", a];
+            SimMemoryWindowController *w = [SimMemoryWindowController openNewMemoryWindow];
+            (void)w;  // user can read the address from the status bar
+            return;
+        }
+    }
+    self.statusField.stringValue = @"Not found";
+}
+
 // AutoTrace: animate single-stepping on a timer (the original's AutoTraceTimer).
 - (void)autoTrace:(id)sender {
     if (self.autoTraceTimer) { [self stopAutoTrace]; return; }   // toggle
-    self.autoTraceTimer = [NSTimer scheduledTimerWithTimeInterval:0.06 repeats:YES block:^(NSTimer *t) {
+    if (self.autoTraceMs < 1) self.autoTraceMs = 60;
+    self.autoTraceTimer = [NSTimer scheduledTimerWithTimeInterval:(self.autoTraceMs / 1000.0) repeats:YES block:^(NSTimer *t) {
         if (self.running || !self.programLoaded || halt) return;
         [self startTrace:YES sstep:NO stopAt:-1 verb:@"AutoTrace"];
     }];
     self.statusField.stringValue = @"AutoTrace…";
+}
+
+// Run > Auto Trace Options (a 1:1 port of Optionsu.dfm / AutoTraceOptions).
+- (void)autoTraceOptions:(id)sender {
+    if (self.autoTraceMs < 1) self.autoTraceMs = 60;
+    NSAlert *al = [NSAlert new];
+    al.messageText = @"Auto Trace Options";
+    NSView *acc = [[NSView alloc] initWithFrame:NSMakeRect(0,0,260,56)];
+    NSTextField *lbl = [NSTextField labelWithString:@"Auto Trace Interval (mSec):"];
+    lbl.frame = NSMakeRect(0,32,200,18); [acc addSubview:lbl];
+    NSTextField *fld = [[NSTextField alloc] initWithFrame:NSMakeRect(168,30,56,22)];
+    fld.stringValue = [NSString stringWithFormat:@"%d", self.autoTraceMs]; [acc addSubview:fld];
+    NSStepper *step = [[NSStepper alloc] initWithFrame:NSMakeRect(226,30,18,22)];
+    step.minValue = 1; step.maxValue = 10000; step.increment = 10; step.integerValue = self.autoTraceMs;
+    step.target = fld; step.action = NULL;  // simple visual; value read on OK
+    [acc addSubview:step];
+    NSButton *dd = [NSButton checkboxWithTitle:@"Disable display update" target:nil action:NULL];
+    dd.frame = NSMakeRect(0,4,240,18); dd.state = self.autoTraceDisableDisplay ? NSControlStateValueOn : NSControlStateValueOff;
+    [acc addSubview:dd];
+    al.accessoryView = acc;
+    [al addButtonWithTitle:@"OK"]; [al addButtonWithTitle:@"Cancel"];
+    if ([al runModal] != NSAlertFirstButtonReturn) return;
+    int ms = fld.intValue; if (ms < 1) ms = 1;
+    self.autoTraceMs = ms;
+    self.autoTraceDisableDisplay = (dd.state == NSControlStateValueOn);
+    if (self.autoTraceTimer) { [self stopAutoTrace]; [self autoTrace:nil]; }   // apply live
 }
 - (void)stopAutoTrace {
     if (self.autoTraceTimer) { [self.autoTraceTimer invalidate]; self.autoTraceTimer = nil; }

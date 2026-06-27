@@ -156,6 +156,40 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     [buildMenu addItem:Item(@"Assemble", @selector(assemble:), @"b")];
     [buildMenu addItem:Item(@"Assemble and Run", @selector(runProgram:), @"r")];
 
+    // --- Run menu (simulator controls; dispatched to the key sim window via the
+    //     responder chain, so they enable only when the Simulator is frontmost) ---
+    NSMenuItem *runItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:runItem];
+    NSMenu *runMenu = [[NSMenu alloc] initWithTitle:@"Run"];
+    runItem.submenu = runMenu;
+    NSMenuItem *(^FKey)(NSString *, SEL, unichar) = ^(NSString *t, SEL a, unichar fk) {
+        NSMenuItem *m = [[NSMenuItem alloc] initWithTitle:t action:a
+            keyEquivalent:(fk ? [NSString stringWithCharacters:&fk length:1] : @"")];
+        if (fk) m.keyEquivalentModifierMask = NSEventModifierFlagFunction;
+        [runMenu addItem:m]; return m;
+    };
+    FKey(@"Run",            @selector(run:),         NSF9FunctionKey);
+    FKey(@"Step Over",      @selector(step:),        NSF8FunctionKey);
+    FKey(@"Trace Into",     @selector(traceInto:),   NSF7FunctionKey);
+    FKey(@"Run To Cursor",  @selector(runToCursor:), NSF5FunctionKey);
+    FKey(@"Auto Trace",     @selector(autoTrace:),   0);
+    FKey(@"Auto Trace Options…", @selector(autoTraceOptions:), 0);
+    FKey(@"Pause",          @selector(pause:),       NSF6FunctionKey);
+    [runMenu addItem:[NSMenuItem separatorItem]];
+    FKey(@"Reset",          @selector(resetSim:),    0);
+    FKey(@"Reload Program", @selector(reload:),      0);
+
+    // --- Search menu (Find in memory + Goto PC, plus editor Find) ---
+    NSMenuItem *searchItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:searchItem];
+    NSMenu *searchMenu = [[NSMenu alloc] initWithTitle:@"Search"];
+    searchItem.submenu = searchMenu;
+    [searchMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Find in Memory…"
+        action:@selector(findInMemory:) keyEquivalent:@""]];
+    NSMenuItem *gotoPC = [[NSMenuItem alloc] initWithTitle:@"Goto PC"
+        action:@selector(gotoPC:) keyEquivalent:@""];
+    [searchMenu addItem:gotoPC];
+
     // --- View menu (font size) ---
     NSMenuItem *viewItem = [[NSMenuItem alloc] init];
     [mainMenu addItem:viewItem];
