@@ -69,9 +69,13 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     [super viewDidMoveToWindow];
     if (self.window && !_refreshTimer) {
         __weak SimHardwareView *weak = self;
-        _refreshTimer = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
+        _refreshTimer = [NSTimer timerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
             if (weak.window.isVisible) [weak refresh];
         }];
+        // Common modes so the display keeps refreshing while the user is
+        // holding a button down (mouse tracking switches the run loop out of
+        // the default mode, which would otherwise freeze this timer).
+        [[NSRunLoop currentRunLoop] addTimer:_refreshTimer forMode:NSRunLoopCommonModes];
     }
 }
 - (void)dealloc { [_refreshTimer invalidate]; [_autoTimer invalidate]; }
@@ -314,12 +318,15 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
         int n = (int)_autoIRQ.indexOfSelectedItem + 1;
         [self setAutoBtnTitle:@"Stop"];
         __weak SimHardwareView *weak = self;
-        _autoTimer = [NSTimer scheduledTimerWithTimeInterval:ms/1000.0 repeats:YES block:^(NSTimer *t) {
+        _autoTimer = [NSTimer timerWithTimeInterval:ms/1000.0 repeats:YES block:^(NSTimer *t) {
             irq |= (0x01 << (n - 1));                 // the Auto Interval IRQ
             SimHardwareView *s = weak; if (!s) return;
             for (int k = 0; k < 7; k++)               // + any IRQ marked Automatic
                 if (s->_autoChk[k].state == NSControlStateValueOn) irq |= (0x01 << k);
         }];
+        // Common modes so interrupts keep firing while a button is held down
+        // (mouse tracking would otherwise pause this timer until release).
+        [[NSRunLoop currentRunLoop] addTimer:_autoTimer forMode:NSRunLoopCommonModes];
     }
 }
 
