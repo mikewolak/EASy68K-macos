@@ -139,7 +139,11 @@
         [reset.topAnchor constraintEqualToAnchor:fontLbl.bottomAnchor constant:14],
         [reset.leadingAnchor constraintEqualToAnchor:_fontSlider.leadingAnchor],
 
-        [sep2.topAnchor constraintEqualToAnchor:reset.bottomAnchor constant:18],
+        // tip sits right under the font controls it describes
+        [hint.topAnchor constraintEqualToAnchor:reset.bottomAnchor constant:10],
+        [hint.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:20],
+
+        [sep2.topAnchor constraintEqualToAnchor:hint.bottomAnchor constant:16],
         [sep2.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:20],
         [sep2.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-20],
         [amLbl.topAnchor constraintEqualToAnchor:sep2.bottomAnchor constant:12],
@@ -175,9 +179,6 @@
         [_midiOutPopup.centerYAnchor constraintEqualToAnchor:midiOutLbl.centerYAnchor],
         [_midiOutPopup.leadingAnchor constraintEqualToAnchor:midiOutLbl.trailingAnchor constant:10],
         [_midiOutPopup.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-20],
-
-        [hint.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-16],
-        [hint.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:20],
     ]];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(syncFromTheme)
