@@ -19,6 +19,7 @@
 #import "SimBridge.h"
 #import "SimGraphicsView.h"
 #import "SimListingView.h"
+#import "SimRegisterView.h"
 #import "SimStackView.h"
 #import "SimBreakpointsView.h"
 #import "SimHardwareView.h"
@@ -48,7 +49,7 @@ static NSToolbarItemIdentifier const kStack     = @"sim.stack";
 static NSToolbarItemIdentifier const kLog       = @"sim.log";
 
 @interface SimController () <NSToolbarDelegate, NSTextFieldDelegate, SimListingDelegate, SimBreakpointsDelegate, NSWindowDelegate>
-@property (nonatomic, strong) NSTextView *registersView;
+@property (nonatomic, strong) SimRegisterView *regView;       // editable register panel
 @property (nonatomic, strong) SimListingView *listingView;   // .L68 source pane
 @property (nonatomic, strong) SimGraphicsView *gfxView;
 @property (nonatomic, strong) NSWindow *ioWindow;            // separate I/O window
@@ -194,9 +195,16 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
         [hsplit.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-24],
     ]];
 
-    // Left: registers
+    // Left: editable register panel (1:1 with the original GroupBox1)
     NSScrollView *regScroll = [[NSScrollView alloc] initWithFrame:content.bounds];
-    self.registersView = MonoTextView(regScroll, NO);
+    regScroll.hasVerticalScroller = YES; regScroll.borderType = NSNoBorder;
+    regScroll.drawsBackground = YES; regScroll.backgroundColor = NSColor.textBackgroundColor;
+    self.regView = [[SimRegisterView alloc] initWithFrame:NSMakeRect(0,0,330,560)];
+    __weak SimController *weakSelf = self;
+    self.regView.onEdit = ^{ [weakSelf.listingView highlightPC:(uint32_t)PC halted:YES];
+                             [weakSelf refreshMemory];
+                             [SimMemoryWindowController refreshLiveWindows]; };
+    regScroll.documentView = self.regView;
     [hsplit addSubview:regScroll];
 
     // Right: vertical split [console] / [memory]
@@ -250,8 +258,8 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 
 - (void)themeChanged {
     NSFont *f = [E68Theme shared].monoFont;
-    self.registersView.font = f;
     self.memoryView.font = f;
+    [self.regView refresh];
     if (self.programLoaded) { [self refreshRegisters]; [self refreshMemory]; }
 }
 
@@ -647,27 +655,8 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [SimMemoryWindowController refreshLiveWindows];   // update any Live memory windows
 }
 
-static NSString *Flags(short sr) {
-    char b[18];
-    const char *names = "TS  III   XNZVC";  // bit15..bit0 labels (approx positions)
-    (void)names;
-    // Build a readable SR breakdown.
-    int t = (sr >> 15) & 1, s = (sr >> 13) & 1, i = (sr >> 8) & 7;
-    int x = (sr >> 4) & 1, n = (sr >> 3) & 1, z = (sr >> 2) & 1, v = (sr >> 1) & 1, c = sr & 1;
-    snprintf(b, sizeof(b), "%d%d%d%d%d", x, n, z, v, c);
-    return [NSString stringWithFormat:@"T=%d S=%d I=%d  X=%d N=%d Z=%d V=%d C=%d", t, s, i, x, n, z, v, c];
-}
-
 - (void)refreshRegisters {
-    NSMutableString *m = [NSMutableString string];
-    for (int r = 0; r < 8; r++)
-        [m appendFormat:@"D%d  %08X    A%d  %08X\n", r, (unsigned)D[r], r, (unsigned)A[r]];
-    [m appendFormat:@"\nUSP %08X    SSP %08X\n", (unsigned)A[7], (unsigned)A[8]];
-    [m appendFormat:@"PC  %08X\n", (unsigned)PC];
-    [m appendFormat:@"SR  %04X\n", (unsigned short)SR];
-    [m appendFormat:@"    %@\n", Flags(SR)];
-    [m appendFormat:@"\nCycles  %llu\n", (unsigned long long)cycles];
-    self.registersView.string = m;
+    [self.regView refresh];
 }
 
 #pragma mark Remote control
