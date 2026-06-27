@@ -151,10 +151,87 @@ window (with hot-plug-aware pickers).
 
 ## Remote-control API
 
-A localhost HTTP server (`--control-port N`) exposes `/sim/load`, `/sim/run`,
-`/sim/step`, `/status`, `/registers`, `/memory`, `/console`, … so the simulator
-can be driven and inspected from scripts — used throughout development for
-automated verification.
+EASy68K embeds a small **localhost HTTP server** so the editor, simulator and
+EASyBIN utility can be driven and inspected from scripts — this is how the whole
+app is verified during development (load a program, run it, read registers and
+memory, export a binary, all headless).
+
+### Enabling it
+
+The server is **off by default**. Turn it on one of three ways (it binds to
+`127.0.0.1` only):
+
+| How | Example |
+|---|---|
+| Command-line flag | `open EASy68K.app --args --control-port 8077` |
+| Environment variable | `EASY68K_CONTROL_PORT=8077 open EASy68K.app` |
+| Default when env set | port **8068** if neither flag nor env overrides it |
+| Disable explicitly | `--no-control` (or port `0`) |
+
+All examples below use port `8077`. Parameters may be passed as a **query
+string** or in the **POST body**. Read endpoints return `text/plain`; action
+endpoints return `application/json`. `GET /` returns the list of endpoints.
+
+### Editor / document
+
+| Method · Endpoint | Purpose |
+|---|---|
+| `POST /open?path=FILE` | Open a source file in the editor |
+| `GET  /source` | Return the front document's source text |
+| `POST /source` *(body = text)* | Replace the front document's source |
+| `POST /save` | Save the front document |
+| `POST /assemble` | Assemble it → `{errorCount, warningCount, …}` |
+| `POST /run` | Assemble, open the simulator and run |
+
+### Simulator
+
+| Method · Endpoint | Purpose |
+|---|---|
+| `GET  /status` *(or `/registers`)* | Machine state (see below) |
+| `POST /sim/load?path=FILE.S68` | Load an S-record into the simulator |
+| `POST /sim/run` | Free-run |
+| `POST /sim/step` | Single step → returns the new state |
+| `POST /sim/stop` | Halt the run |
+| `POST /sim/reset` | Reset → returns the new state |
+| `POST /sim/input?text=STR` | Feed a line to the console (TRAP input) |
+| `GET  /memory?addr=HEX&len=N` | Hex/ASCII dump of simulator memory (`len` default 256) |
+| `GET  /console` | The I/O console text |
+
+`/status` returns JSON:
+
+```json
+{ "D": [d0..d7], "A": [a0..a8], "PC": 4096, "SR": 8192, "cycles": 0,
+  "halted": false, "running": true, "loaded": true,
+  "program": "knightrider.S68", "status": "Running…" }
+```
+
+### EASyBIN (binary / S-record utility)
+
+Operates on EASyBIN's own 16 MB buffer (independent of the simulator). All take
+**hex** addresses; `split` is `0`/`2`/`4`.
+
+| Method · Endpoint | Purpose |
+|---|---|
+| `POST /bin/load-srec?path=FILE` | Load an S-record → `{low, high, start, length, s0}` |
+| `POST /bin/load-bin?path=FILE&addr=HEX&split=N` | Load raw binary at `addr` (split spreads bytes) |
+| `POST /bin/save-bin?path=FILE&from=HEX&len=HEX&split=N` | Save range as binary; `split 2`→`_0`/`_1`, `4`→`_0`..`_3` |
+| `POST /bin/save-srec?path=FILE&from=HEX&to=HEX&start=HEX` | Save range as an S-record |
+| `GET  /bin/memory?addr=HEX&len=N` | Hex/ASCII dump of the EASyBIN buffer |
+
+### Example session
+
+```sh
+B=http://127.0.0.1:8077
+curl -s -X POST "$B/sim/load?path=$PWD/demos/bouncingBall.S68"
+curl -s -X POST "$B/sim/run"
+curl -s "$B/status" | jq .PC
+curl -s "$B/memory?addr=1000&len=64"
+
+# export the loaded program as an EPROM-split binary pair
+curl -s -X POST "$B/bin/load-srec?path=$PWD/demos/bouncingBall.S68"
+curl -s -X POST "$B/bin/save-bin?path=/tmp/rom.bin&from=1000&len=400&split=2"
+#  → /tmp/rom_0.bin (even bytes) + /tmp/rom_1.bin (odd bytes)
+```
 
 ---
 
