@@ -670,6 +670,30 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     }
 }
 
+// File > Open Data: load a raw binary file into 68000 memory at an address
+// (the original's "Open Data"), so programs can read pre-loaded data.
+- (void)openData:(id)sender {
+    if (!memory) { self.statusField.stringValue = @"Open Data: load a program first"; return; }
+    NSOpenPanel *p = [NSOpenPanel openPanel];
+    p.allowsMultipleSelection = NO;
+    if ([p runModal] != NSModalResponseOK || !p.URLs.firstObject) return;
+    NSData *d = [NSData dataWithContentsOfURL:p.URLs.firstObject];
+    if (!d.length) { self.statusField.stringValue = @"Open Data: empty / unreadable file"; return; }
+
+    NSAlert *al = [NSAlert new];
+    al.messageText = [NSString stringWithFormat:@"Load %lu bytes at address:", (unsigned long)d.length];
+    NSTextField *addr = [[NSTextField alloc] initWithFrame:NSMakeRect(0,0,120,24)];
+    addr.stringValue = @"1000"; al.accessoryView = addr;
+    [al addButtonWithTitle:@"Load"]; [al addButtonWithTitle:@"Cancel"];
+    if ([al runModal] != NSAlertFirstButtonReturn) return;
+    uint32_t a = (uint32_t)(strtoul([addr.stringValue stringByReplacingOccurrencesOfString:@"$" withString:@""].UTF8String, NULL, 16) & (SIM_MEMSIZE-1));
+    NSUInteger n = MIN(d.length, (NSUInteger)(SIM_MEMSIZE - a));
+    memcpy(&memory[a], d.bytes, n);
+    self.statusField.stringValue = [NSString stringWithFormat:@"Loaded %lu bytes at $%06X", (unsigned long)n, a];
+    [self refreshMemory];
+    [SimMemoryWindowController refreshLiveWindows];
+}
+
 // Reload the current program from disk (the original's Reload).
 - (void)reload:(id)sender {
     if (self.srecPath) { [self stop:nil]; [self loadProgram:self.srecPath title:self.programName]; }

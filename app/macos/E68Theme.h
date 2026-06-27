@@ -27,6 +27,7 @@ extern NSString * const E68ThemeChangedNotification;
 + (instancetype)shared;
 
 @property (nonatomic, assign) CGFloat fontSize;      // 8…28, persisted
+@property (nonatomic, copy) NSString *fontName;      // mono family, persisted
 
 - (void)increaseFontSize;
 - (void)decreaseFontSize;

@@ -19,7 +19,9 @@ NSString * const E68ThemeChangedNotification = @"E68ThemeChanged";
 
 #define DEFAULT_FONT_SIZE 12.0
 
-@implementation E68Theme
+@implementation E68Theme {
+    NSString *_fontName;
+}
 
 + (instancetype)shared {
     static E68Theme *s; static dispatch_once_t once;
@@ -43,9 +45,25 @@ NSString * const E68ThemeChangedNotification = @"E68ThemeChanged";
 
 - (void)increaseFontSize { self.fontSize = _fontSize + 1; }
 - (void)decreaseFontSize { self.fontSize = _fontSize - 1; }
-- (void)resetFontSize    { self.fontSize = DEFAULT_FONT_SIZE; }
+- (void)resetFontSize    { self.fontSize = DEFAULT_FONT_SIZE; self.fontName = nil; }
 
-- (NSFont *)monoFont      { return [NSFont monospacedSystemFontOfSize:_fontSize weight:NSFontWeightRegular]; }
-- (NSFont *)monoSmallFont { return [NSFont monospacedSystemFontOfSize:MAX(8,_fontSize-1) weight:NSFontWeightRegular]; }
+- (NSString *)fontName {
+    if (!_fontName) _fontName = [[NSUserDefaults standardUserDefaults] stringForKey:@"FontName"];
+    return _fontName;
+}
+- (void)setFontName:(NSString *)fontName {
+    _fontName = [fontName copy];
+    [[NSUserDefaults standardUserDefaults] setObject:(fontName ?: @"") forKey:@"FontName"];
+    [[NSNotificationCenter defaultCenter] postNotificationName:E68ThemeChangedNotification object:self];
+}
+
+- (NSFont *)monoFont {
+    NSFont *f = self.fontName.length ? [NSFont fontWithName:self.fontName size:_fontSize] : nil;
+    return f ?: [NSFont monospacedSystemFontOfSize:_fontSize weight:NSFontWeightRegular];
+}
+- (NSFont *)monoSmallFont {
+    NSFont *f = self.fontName.length ? [NSFont fontWithName:self.fontName size:MAX(8,_fontSize-1)] : nil;
+    return f ?: [NSFont monospacedSystemFontOfSize:MAX(8,_fontSize-1) weight:NSFontWeightRegular];
+}
 
 @end

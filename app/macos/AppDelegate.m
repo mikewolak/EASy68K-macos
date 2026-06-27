@@ -56,6 +56,16 @@
 
 - (void)showAbout:(id)sender { [AboutWindowController showAbout]; }
 - (void)showSettings:(id)sender { [SettingsWindowController showSettings]; }
+- (void)showFontPanel:(id)sender {
+    NSFontManager *fm = [NSFontManager sharedFontManager];
+    [fm setSelectedFont:[E68Theme shared].monoFont isMultiple:NO];
+    [fm orderFrontFontPanel:sender];
+}
+- (void)changeFont:(id)sender {           // NSFontManager sends this up the chain
+    NSFont *f = [sender convertFont:[E68Theme shared].monoFont];
+    [E68Theme shared].fontName = f.fontName;
+    [E68Theme shared].fontSize = f.pointSize;   // posts the theme-changed notification
+}
 - (void)increaseFontSize:(id)sender { [[E68Theme shared] increaseFontSize]; }
 - (void)decreaseFontSize:(id)sender { [[E68Theme shared] decreaseFontSize]; }
 - (void)resetFontSize:(id)sender    { [[E68Theme shared] resetFontSize]; }
@@ -107,6 +117,9 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     fileItem.submenu = fileMenu;
     [fileMenu addItem:Item(@"New", @selector(newDocument:), @"n")];
     [fileMenu addItem:Item(@"Open…", @selector(openDocument:), @"o")];
+    NSMenuItem *openData = Item(@"Open Data…", @selector(openData:), @"o");
+    openData.keyEquivalentModifierMask = NSEventModifierFlagShift | NSEventModifierFlagCommand;
+    [fileMenu addItem:openData];   // load a binary file into 68000 memory
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItem:Item(@"Close", @selector(performClose:), @"w")];
     [fileMenu addItem:Item(@"Save…", @selector(saveDocument:), @"s")];
@@ -209,6 +222,10 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     NSMenuItem *resetF = Item(@"Actual Size", @selector(resetFontSize:), @"0");
     resetF.target = self;
     [viewMenu addItem:resetF];
+    [viewMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *fontItem = Item(@"Font…", @selector(showFontPanel:), @"t");
+    fontItem.target = self;
+    [viewMenu addItem:fontItem];   // pick the mono font family for source/regs/memory
 
     // --- Window menu ---
     NSMenuItem *windowItem = [[NSMenuItem alloc] init];
