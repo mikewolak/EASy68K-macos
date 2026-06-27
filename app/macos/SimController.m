@@ -25,6 +25,7 @@
 #import "SimHwBridge.h"
 #import "E68BrushedView.h"
 #import "SimSoundBridge.h"
+#import "SimIntController.h"
 #import "SimLogController.h"
 #import "SimLogBridge.h"
 #import "E68Theme.h"
@@ -461,6 +462,8 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     if (!memory) memory = (char *)calloc(SIM_MEMSIZE, 1);
     exceptions = 1; bitfield = true;
     initSim();
+    simIntReset();      // device I/O interrupts always start disabled for a new
+                        // program — they never leak in from a previous run
     memset(memory, 0, SIM_MEMSIZE);
     int rc = loadSrec((char *)srecPath.fileSystemRepresentation);
     OLD_PC = PC;        // prime the current-instruction tracker to the start

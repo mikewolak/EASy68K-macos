@@ -20,6 +20,7 @@ extern int irq;          // the 68000 IRQ request register (globals.c); the CPU
 
 static int gEnabled[4];  // all zero => disabled by default
 static int gLevel[4];
+static void (*gOnChange)(void);
 
 static void raiseIRQ(int source) {
     if (gEnabled[source] && gLevel[source] >= 1 && gLevel[source] <= 7)
@@ -33,6 +34,7 @@ void simIntConfig(int source, int enable, int level) {
     // a freshly-enabled transmitter is immediately "ready" -> first IRQ now
     if (gEnabled[source] && (source == SIM_INT_MIDI_TX || source == SIM_INT_SER_TX))
         raiseIRQ(source);
+    if (gOnChange) gOnChange();
 }
 
 void simIntNotify(int source) {
@@ -42,3 +44,10 @@ void simIntNotify(int source) {
 
 int simIntEnabled(int source) { return (source >= 0 && source < 4) ? gEnabled[source] : 0; }
 int simIntLevel(int source)   { return (source >= 0 && source < 4) ? gLevel[source]   : 0; }
+
+void simIntReset(void) {
+    for (int i = 0; i < 4; i++) gEnabled[i] = 0;   // back to the original paradigm
+    if (gOnChange) gOnChange();
+}
+
+void simIntSetOnChange(void (*cb)(void)) { gOnChange = cb; }

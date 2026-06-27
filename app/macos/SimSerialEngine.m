@@ -57,6 +57,13 @@ static void portsChanged(void *refcon, io_iterator_t iter) {
     IONotificationPortRef _notify;
     io_iterator_t _addIter, _rmIter;
     dispatch_source_t _rxPoll;          // raises the serial-RX IRQ when data waits
+    BOOL _rxPollRunning;                // only runs while serial-RX ints are on
+}
+
+// Fired by SimIntController whenever the enabled set changes; keep the RX poll
+// timer dormant unless serial-RX interrupts are actually on.
+static void serialIntChanged(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{ [[SimSerialEngine shared] updateRxPoller]; });
 }
 
 + (instancetype)shared {
@@ -73,21 +80,29 @@ static void portsChanged(void *refcon, io_iterator_t iter) {
         _baudIndex = [u objectForKey:K_SER_BAUD] ? (int)[u integerForKey:K_SER_BAUD] : 7; // 9600
         [self startHotPlugWatch];
         [self startRxPoller];
+        simIntSetOnChange(serialIntChanged);
     }
     return self;
 }
 
-// Poll open ports for inbound data; raise the serial-RX IRQ when the program
-// has serial-RX interrupts enabled (no-op otherwise). The program's ISR reads
-// the data via readComm, which clears the device buffer.
+// The RX poll timer is created SUSPENDED and only resumed while serial-RX
+// interrupts are enabled, so a program that doesn't use them has zero extra
+// background activity and unchanged behavior.
 - (void)startRxPoller {
     _rxPoll = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
         dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
     dispatch_source_set_timer(_rxPoll, DISPATCH_TIME_NOW, 2 * NSEC_PER_MSEC, 1 * NSEC_PER_MSEC);
     __weak SimSerialEngine *weak = self;
     dispatch_source_set_event_handler(_rxPoll, ^{ [weak rxPollTick]; });
-    dispatch_resume(_rxPoll);
+    _rxPollRunning = NO;                // stays dormant until enabled
 }
+
+- (void)updateRxPoller {
+    BOOL want = simIntEnabled(SIM_INT_SER_RX) ? YES : NO;
+    if (want && !_rxPollRunning)      { dispatch_resume(_rxPoll);  _rxPollRunning = YES; }
+    else if (!want && _rxPollRunning) { dispatch_suspend(_rxPoll); _rxPollRunning = NO; }
+}
+
 - (void)rxPollTick {
     if (!simIntEnabled(SIM_INT_SER_RX)) return;
     for (int i = 0; i < MAX_COMM; i++) {

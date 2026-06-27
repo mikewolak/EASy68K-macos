@@ -43,6 +43,15 @@ void simIntNotify(int source);
 int  simIntEnabled(int source);
 int  simIntLevel(int source);
 
+// Disable every source. Called when a program is loaded or the sim is reset, so
+// device interrupts never leak between runs — a program that never enables them
+// behaves exactly as it did before this feature existed.
+void simIntReset(void);
+
+// Optional hook fired whenever the enabled set changes (config or reset), so an
+// engine can start/stop background polling and stay fully dormant when unused.
+void simIntSetOnChange(void (*cb)(void));
+
 #ifdef __cplusplus
 }
 #endif
