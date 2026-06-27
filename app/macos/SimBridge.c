@@ -25,6 +25,7 @@
 #include "SimBridge.h"
 #include "SimGfxBridge.h"     // routes graphics/text to the SimGraphicsView
 #include "SimLogBridge.h"     // pretty-prints .L68 source lines into the log
+#include "SimHwBridge.h"      // memory-mapped LEDs/7-seg/switches Hardware window
 
 extern int PC;               // current program counter (globals.c, int32_t)
 
@@ -152,10 +153,10 @@ void simHardwareEnable(void)            {}
 void simHardwareDisable(void)           {}
 void simHardwareAutoIRQoff(void)        {}
 void simHardwareShow(void)              {}
-void simHardwareUpdate(int loc)         { (void)loc; }
+void simHardwareUpdate(int loc)         { hw_update(loc); }
 void simHardwareSetAutoIRQ(uchar n,int iv){ (void)n; (void)iv; }
-int  simHardwareSeg7Addr(void)          { return 0; }
-int  simHardwareLEDAddr(void)           { return 0; }
-int  simHardwareSwitchAddr(void)        { return 0; }
-int  simHardwarePbAddr(void)            { return 0; }
+int  simHardwareSeg7Addr(void)          { return hw_seg7_addr(); }
+int  simHardwareLEDAddr(void)           { return hw_led_addr(); }
+int  simHardwareSwitchAddr(void)        { return hw_switch_addr(); }
+int  simHardwarePbAddr(void)            { return hw_pb_addr(); }
 void simHardwareSetMap(int k,int s,int e){ (void)k; (void)s; (void)e; }

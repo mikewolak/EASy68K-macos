@@ -21,6 +21,8 @@
 #import "SimListingView.h"
 #import "SimStackView.h"
 #import "SimBreakpointsView.h"
+#import "SimHardwareView.h"
+#import "SimHwBridge.h"
 #import "SimLogController.h"
 #import "SimLogBridge.h"
 #import "E68Theme.h"
@@ -50,6 +52,8 @@ static NSToolbarItemIdentifier const kLog       = @"sim.log";
 @property (nonatomic, strong) SimStackView *stackView;
 @property (nonatomic, strong) NSWindow *bpWindow;          // Break Points window
 @property (nonatomic, strong) SimBreakpointsView *bpView;
+@property (nonatomic, strong) NSWindow *hwWindow;         // Hardware window
+@property (nonatomic, strong) SimHardwareView *hwView;
 @property (nonatomic, strong) NSTimer *autoTraceTimer;     // AutoTrace animation
 @property (nonatomic, strong) NSTextView *memoryView;
 @property (nonatomic, strong) NSTextField *inputField;
@@ -213,6 +217,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     [self buildIOWindow];
     [self buildStackWindow];
     [self buildBreakpointsWindow];
+    [self buildHardwareWindow];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [hsplit setPosition:250 ofDividerAtIndex:0];
@@ -368,6 +373,26 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 - (void)showBreakpointsWindow:(id)sender {
     [self.bpWindow makeKeyAndOrderFront:nil];
     [self.bpView refresh];
+}
+
+// The Hardware window (memory-mapped LEDs / 7-seg / switches).
+- (void)buildHardwareWindow {
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 560, 360)
+        styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+        backing:NSBackingStoreBuffered defer:NO];
+    w.title = @"EASy68K Hardware";
+    w.releasedWhenClosed = NO;
+    self.hwView = [[SimHardwareView alloc] initWithFrame:((NSView *)w.contentView).bounds];
+    self.hwView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [w.contentView addSubview:self.hwView];
+    self.hwWindow = w;
+    hw_set_view((__bridge void *)self.hwView);
+}
+
+- (void)showHardwareWindow:(id)sender {
+    [self.hwWindow makeKeyAndOrderFront:nil];
+    [self.hwView refresh];
 }
 
 #pragma mark Toolbar

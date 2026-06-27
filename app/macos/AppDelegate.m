@@ -52,6 +52,7 @@
 - (void)resetFontSize:(id)sender    { [[E68Theme shared] resetFontSize]; }
 - (void)showStackWindow:(id)sender  { [[SimController sharedController] showStackWindow:sender]; }
 - (void)showBreakpointsWindow:(id)sender { [[SimController sharedController] showBreakpointsWindow:sender]; }
+- (void)showHardwareWindow:(id)sender { [[SimController sharedController] showHardwareWindow:sender]; }
 - (void)showLogWindow:(id)sender    { [[SimLogController shared] showLog]; }
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender { return NO; }
@@ -161,6 +162,9 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     NSMenuItem *bpWin = Item(@"Break Points", @selector(showBreakpointsWindow:), @"");
     bpWin.target = self;
     [windowMenu addItem:bpWin];
+    NSMenuItem *hwWin = Item(@"Hardware", @selector(showHardwareWindow:), @"");
+    hwWin.target = self;
+    [windowMenu addItem:hwWin];
     NSMenuItem *logWin = Item(@"Execution Log", @selector(showLogWindow:), @"");
     logWin.target = self;
     [windowMenu addItem:logWin];

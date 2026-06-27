@@ -25,6 +25,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)loadAndShow:(NSString *)srecPath title:(NSString *)title;
 - (void)showStackWindow:(id)sender;
 - (void)showBreakpointsWindow:(id)sender;
+- (void)showHardwareWindow:(id)sender;
 
 // ---- Remote control (used by the HTTP control server; main-thread) ----
 - (void)remoteLoad:(NSString *)srecPath title:(NSString *)title;  // load, don't run
