@@ -479,6 +479,11 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
                         // program — they never leak in from a previous run
     memset(memory, 0, SIM_MEMSIZE);
     int rc = loadSrec((char *)srecPath.fileSystemRepresentation);
+    // The push buttons are ACTIVE-LOW: 0xFF = all released. The memset above
+    // left them 0 (= all pressed), so re-init them so a program reading the
+    // Buttons Address doesn't see phantom presses.
+    int pbA = hw_pb_addr();
+    if (memory && pbA >= 0) memory[pbA & (SIM_MEMSIZE - 1)] = (char)0xFF;
     OLD_PC = PC;        // prime the current-instruction tracker to the start
                         // address (the GUI's run handler does this; the first
                         // relative branch needs OLD_PC == its own address)

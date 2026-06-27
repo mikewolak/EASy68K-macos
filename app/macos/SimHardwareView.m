@@ -251,7 +251,12 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     [self smallLabel:@"IRQ" frame:NSMakeRect(8, 18, 26, 14) in:ac white:YES];
     _autoIRQ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(34, 14, 50, 24)];
     [_autoIRQ addItemsWithTitles:@[@"1",@"2",@"3",@"4",@"5",@"6",@"7"]];
-    _autoIRQ.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];  // light + readable
+    // dark popup with white text so the value reads on the maroon panel
+    _autoIRQ.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    for (NSMenuItem *it in _autoIRQ.itemArray)
+        it.attributedTitle = [[NSAttributedString alloc] initWithString:it.title attributes:@{
+            NSForegroundColorAttributeName: NSColor.whiteColor,
+            NSFontAttributeName: [NSFont systemFontOfSize:12] }];
     [ac addSubview:_autoIRQ];
     _autoBtn = [self maroonButton:@"Start" frame:NSMakeRect(92, 14, 56, 24) action:@selector(autoToggle:)];
     [ac addSubview:_autoBtn];
