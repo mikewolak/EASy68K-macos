@@ -377,13 +377,14 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 
 // The Hardware window (memory-mapped LEDs / 7-seg / switches).
 - (void)buildHardwareWindow {
-    // Exact Sim68K hardwareu.dfm client size (422 x 495), fixed.
-    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 422, 495)
+    // Sim68K hardwareu.dfm layout (422 wide) + room for the right-hand address
+    // captions = 462 x 495, fixed.
+    NSWindow *w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 462, 495)
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
         backing:NSBackingStoreBuffered defer:NO];
     w.title = @"EASy68K Hardware";
     w.releasedWhenClosed = NO;
-    self.hwView = [[SimHardwareView alloc] initWithFrame:NSMakeRect(0,0,422,495)];
+    self.hwView = [[SimHardwareView alloc] initWithFrame:NSMakeRect(0,0,462,495)];
     [w.contentView addSubview:self.hwView];
     self.hwWindow = w;
     hw_set_view((__bridge void *)self.hwView);

@@ -44,7 +44,7 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
-    if ((self = [super initWithFrame:NSMakeRect(0,0,422,495)])) {
+    if ((self = [super initWithFrame:NSMakeRect(0,0,462,495)])) {
         _seg7Addr = 0x00FF8000; _ledAddr = 0x00FF8010;
         _switchAddr = 0x00FF8020; _pbAddr = 0x00FF8030;
         [self buildControls];
@@ -98,13 +98,13 @@ static const CGRect kPanel1 = {{8, 84}, {329, 33}};   // LEDs, gray
     NSString *caps[4] = {@"7-Seg", @"LEDs", @"Switch", @"Buttons"};
     uint32_t vals[4] = {_seg7Addr, _ledAddr, _switchAddr, _pbAddr};
     for (int i = 0; i < 4; i++) {
-        // Caption above each field (the field IS the address) — no separate
-        // "Address:" label, which would collide with the last switch.
+        // Caption above each field (the field IS the address). The window is
+        // widened on the right so the full "<section> Address" caption fits.
         NSTextField *cap = [NSTextField labelWithString:[caps[i] stringByAppendingString:@" Address"]];
         cap.font = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
-        cap.frame = NSMakeRect(344, ys[i] - 17, 76, 14);
+        cap.frame = NSMakeRect(348, ys[i] - 17, 110, 14);
         [self addSubview:cap];
-        NSTextField *field = [self addrFieldAt:344 y:ys[i] value:vals[i]];
+        NSTextField *field = [self addrFieldAt:348 y:ys[i] value:vals[i]];
         if (i == 0) _seg7Field = field;
         else if (i == 1) _ledField = field;
         else if (i == 2) _switchField = field;
