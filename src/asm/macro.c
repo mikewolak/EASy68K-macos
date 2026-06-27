@@ -101,7 +101,7 @@ int macro(int size, char *label, char *op, int *errorPtr)
     listLine(line, "\0");
 
   // move file pointer past ENDM directive
-  while(fgets(line, 256, inFile)) {
+  while(fgetsNoCR(line, 256, inFile)) {
     if (pass == 0)
       fprintf(tmpFile, line);           // write macro line to tmpFile
     lineNum++;
@@ -227,7 +227,7 @@ int asmMacro(int size, char *label, char *arg, int *errorPtr)
           }
         }
 
-        if (fgets(line, 256, inFile) == NULL) {      // get next line
+        if (fgetsNoCR(line, 256, inFile) == NULL) {      // get next line
           NEWERROR(*errorPtr, INVALID_ARG);
           macroNestLevel--;               // count nested macro calls
           return NORMAL;
@@ -275,7 +275,7 @@ int asmMacro(int size, char *label, char *arg, int *errorPtr)
   labelNum++;                           // increment macro label number
   sprintf(labelNumA, "%d", labelNum);        // convert labelNum to string
   endmFlag = false;
-  while(!endmFlag && fgets(line, 256, tmpFile)) {
+  while(!endmFlag && fgetsNoCR(line, 256, tmpFile)) {
     strcap(capLine, line);
     tokenize(capLine, ", \t\n", token, tokens); // tokenize line
 

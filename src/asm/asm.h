@@ -20,6 +20,14 @@
 /* include system header files for prototype checking */
 #include "../common/port68k.h"
 
+/* fgets that also strips CR, so Windows (CRLF) source files tokenize correctly
+ * on macOS/Unix (a stray \r would otherwise corrupt the last token on a line). */
+char *fgetsNoCR(char *s, int n, FILE *f);
+
+/* Directory of the main source file (with trailing separator), so INCLUDE
+ * resolves relative to the source, not the current working directory. */
+extern char sourceDir[256];
+
 /* Define a couple of useful tests */
 
 #define isTerm(c)   (c == ',' || c == '/' || c == '-' || isspace(c) || !c || c == '{')

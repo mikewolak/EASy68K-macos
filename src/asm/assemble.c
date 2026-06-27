@@ -183,6 +183,14 @@ int assembleFile(char fileName[], char tempName[], const char *workName)
       hostError("Error reading source file.", "Error");
       return SEVERE;
     }
+    // remember the source file's directory so INCLUDE resolves relative to it
+    {
+      const char *slash = strrchr(fileName, '/');
+      if (slash) { size_t n = (size_t)(slash - fileName + 1);
+                   if (n >= sizeof(sourceDir)) n = sizeof(sourceDir) - 1;
+                   memcpy(sourceDir, fileName, n); sourceDir[n] = '\0'; }
+      else sourceDir[0] = '\0';
+    }
 
     // if generate listing is checked then create .L68 file
     if (listFlag) {
@@ -302,7 +310,7 @@ int processFile()
       endFlag = false;
       errorCount = warningCount = 0;
       skipCond = false;             // true conditionally skips lines in code
-      while(!endFlag && fgets(line, 256, inFile)) {
+      while(!endFlag && fgetsNoCR(line, 256, inFile)) {
         error = OK;
         continuation = false;
         skipList = false;

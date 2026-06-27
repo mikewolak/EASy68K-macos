@@ -693,6 +693,12 @@ int include(int size, char *label, char *fileName, int *errorPtr)
 
   {
     incFile = fopen(capLine, "r");     // attempt to open include file
+    if (!incFile && capLine[0] != '/' && sourceDir[0]) {
+      // not found in the CWD: resolve relative to the source file's directory
+      char incPath[512];
+      snprintf(incPath, sizeof(incPath), "%s%s", sourceDir, capLine);
+      incFile = fopen(incPath, "r");
+    }
     if (!incFile) {                    // if error opening file
       NEWERROR(*errorPtr, FILE_ERROR);     // error, invalid syntax
       return SEVERE;
@@ -707,7 +713,7 @@ int include(int size, char *label, char *fileName, int *errorPtr)
     // until END directive or EOF
     includeNestLevel++;                 // count nest level of include directive
     lineNum = 1;
-    while(!endFlag && fgets(line, 256, inFile)) {
+    while(!endFlag && fgetsNoCR(line, 256, inFile)) {
       error = OK;
       skipList = false;
       continuation = false;

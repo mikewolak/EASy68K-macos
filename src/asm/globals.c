@@ -17,6 +17,19 @@
 #include <stdio.h>
 #include "asm.h"
 
+// fgets + strip every carriage return, so CRLF (Windows) source files parse the
+// same as LF files. Without this a trailing \r glues onto the last token and
+// breaks symbol/structured-statement parsing.
+char *fgetsNoCR(char *s, int n, FILE *f) {
+    if (!fgets(s, n, f)) return NULL;
+    char *d = s;
+    for (char *p = s; *p; p++) if (*p != '\r') *d++ = *p;
+    *d = '\0';
+    return s;
+}
+
+char sourceDir[256];
+
 
 // General
 
