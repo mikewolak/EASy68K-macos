@@ -73,6 +73,7 @@ extern unsigned int logMemAddr, logMemBytes;
     _startBtn.keyEquivalent = @"\r";
     _stopBtn  = [NSButton buttonWithTitle:@"Log Stop"  target:self action:@selector(stopTapped:)];
     _stopBtn.enabled = NO;
+    NSButton *saveBtn = [NSButton buttonWithTitle:@"Save…" target:self action:@selector(saveTapped:)];
 
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:root.bounds];
     scroll.hasVerticalScroller = YES; scroll.borderType = NSBezelBorder;
@@ -81,7 +82,7 @@ extern unsigned int logMemAddr, logMemBytes;
     _logView.textContainerInset = NSMakeSize(6,6);
     scroll.documentView = _logView;
 
-    for (NSView *v in @[typeLbl,_radio1,_radio2,_radio3,addrLbl,_memAddr,byteLbl,_memBytes,_startBtn,_stopBtn,scroll])
+    for (NSView *v in @[typeLbl,_radio1,_radio2,_radio3,addrLbl,_memAddr,byteLbl,_memBytes,_startBtn,_stopBtn,saveBtn,scroll])
         v.translatesAutoresizingMaskIntoConstraints = NO, [root addSubview:v];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -105,6 +106,8 @@ extern unsigned int logMemAddr, logMemBytes;
         [_memBytes.leadingAnchor constraintEqualToAnchor:byteLbl.trailingAnchor constant:6],
         [_memBytes.widthAnchor constraintEqualToConstant:54],
 
+        [saveBtn.centerYAnchor constraintEqualToAnchor:addrLbl.centerYAnchor],
+        [saveBtn.trailingAnchor constraintEqualToAnchor:_startBtn.leadingAnchor constant:-8],
         [_startBtn.centerYAnchor constraintEqualToAnchor:addrLbl.centerYAnchor],
         [_startBtn.trailingAnchor constraintEqualToAnchor:_stopBtn.leadingAnchor constant:-8],
         [_stopBtn.centerYAnchor constraintEqualToAnchor:addrLbl.centerYAnchor],
@@ -129,6 +132,13 @@ extern unsigned int logMemAddr, logMemBytes;
 
 - (void)startTapped:(id)sender { [self startLogging]; }
 - (void)stopTapped:(id)sender  { [self stopLogging]; }
+- (void)saveTapped:(id)sender {
+    NSSavePanel *p = [NSSavePanel savePanel];
+    p.nameFieldStringValue = @"execution.log";
+    p.allowedFileTypes = @[@"log", @"txt"];
+    if ([p runModal] != NSModalResponseOK) return;
+    [(_logView.string ?: @"") writeToURL:p.URL atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+}
 
 - (void)startLogging {
     [self buildIfNeeded];

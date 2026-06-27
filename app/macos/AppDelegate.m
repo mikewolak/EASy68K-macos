@@ -127,6 +127,11 @@ static NSMenuItem *Item(NSString *title, SEL action, NSString *key) {
     saveAs.keyEquivalentModifierMask = NSEventModifierFlagShift | NSEventModifierFlagCommand;
     [fileMenu addItem:saveAs];
     [fileMenu addItem:Item(@"Revert to Saved", @selector(revertDocumentToSaved:), @"")];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *pageSetup = Item(@"Page Setup…", @selector(runPageLayout:), @"p");
+    pageSetup.keyEquivalentModifierMask = NSEventModifierFlagShift | NSEventModifierFlagCommand;
+    [fileMenu addItem:pageSetup];
+    [fileMenu addItem:Item(@"Print…", @selector(printDocument:), @"p")];
 
     // --- Edit menu ---
     NSMenuItem *editItem = [[NSMenuItem alloc] init];

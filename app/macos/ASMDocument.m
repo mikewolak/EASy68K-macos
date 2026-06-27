@@ -320,6 +320,28 @@ static NSToolbarItemIdentifier const kRunItem      = @"run";
     return [self.text dataUsingEncoding:NSUTF8StringEncoding];
 }
 
+// File > Print / Page Setup: print the source. NSDocument's printDocument: and
+// runPageLayout: drive this; we hand back a print operation for the editor view
+// laid out to the page width.
+- (NSPrintOperation *)printOperationWithSettings:(NSDictionary<NSPrintInfoAttributeKey,id> *)settings
+                                           error:(NSError **)error {
+    EditorWindowController *wc = self.windowControllers.firstObject;
+    NSPrintInfo *pi = [self.printInfo copy];
+    [pi.dictionary addEntriesFromDictionary:settings];
+    pi.horizontalPagination = NSPrintingPaginationModeFit;
+    pi.verticallyCentered = NO;
+
+    NSSize page = pi.paperSize;
+    CGFloat w = page.width - pi.leftMargin - pi.rightMargin;
+    NSTextView *tv = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, w, 100)];
+    tv.string = wc.editor.string ?: self.text ?: @"";
+    tv.font = [NSFont userFixedPitchFontOfSize:10];
+    tv.textContainer.containerSize = NSMakeSize(w, FLT_MAX);
+    tv.textContainer.widthTracksTextView = YES;
+    [tv sizeToFit];
+    return [NSPrintOperation printOperationWithView:tv printInfo:pi];
+}
+
 - (BOOL)readFromData:(NSData *)data ofType:(NSString *)typeName error:(NSError **)outError {
     self.text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
     EditorWindowController *wc = self.windowControllers.firstObject;
