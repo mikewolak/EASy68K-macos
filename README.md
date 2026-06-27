@@ -30,6 +30,31 @@ window, dialog, menu and TRAP.
 
 ---
 
+## 32-bit → 64-bit port
+
+The original EASy68K is a 32-bit Windows application; building it as a modern
+64-bit macOS binary surfaced a class of latent bugs that the original 32-bit
+build never hit, and fixing them took a careful audit of the whole core:
+
+- **Pointer-width assumptions.** The CPU core discriminated *register vs. memory*
+  operands by comparing raw pointer values across the `D[]`/`A[]`/`memory[]`
+  arrays — fine when pointers were 32 bits, but under 64-bit clang the array
+  layout and reordering broke it. Reworked to test against the `memory[]` block
+  bounds with `uintptr_t` ranges (a 6-agent parallel audit of `put()`/`value_of()`
+  and the instruction decoders, since fixing one-offs wasn't safe).
+- **Format-string width mismatches.** `%lX`/`%08lX` fed `int32_t` arguments
+  (right on a 32-bit `long`, wrong on a 64-bit `long`) corrupted the execution
+  log and memory dumps — corrected throughout.
+- **Reset / initial-state bugs.** `OLD_PC` and related state had to be primed
+  exactly so the first relative branch resolved correctly.
+- Plus the CRLF line-ending and `INCLUDE`-path fixes in the assembler that any
+  Windows-authored source would otherwise trip over.
+
+The result is a clean C99 core that produces byte-identical assembly and matches
+the original simulator's behaviour.
+
+---
+
 ## Editor
 
 - 68000 assembly **syntax highlighting**, multiple documents, line numbers.
@@ -95,10 +120,11 @@ graphics, sound effects and keyboard input:
 
 ![EASYZONE — a Battlezone-style vector game running in the simulator](easyzone.png)
 
-## Sound, MIDI, Serial, Networking
+## Input, Sound, MIDI, Serial, Networking
 
 | Subsystem | Hardware Support |
 |---|---|
+| **Keyboard / Mouse** | Keyboard input and **`getKeyState`** (task 19) using the original Windows virtual-key codes, plus key/mouse **interrupts** and mouse position/button reporting — so games like EASYZONE play exactly as on the original. |
 | **Sound** | Low-latency CoreAudio (`HALOutput` + lock-free SPSC ring buffer). WAVs of *any* rate/bit-depth are resampled with Apple's **mastering-grade SRC**. `SND_NOSTOP` semantics match the original. Output **device + L/R channel** selectable. |
 | **MIDI** | CoreMIDI in/out with **hot-plug** detection; device selection persisted; a new **MIDI I/O TRAP** (task 120). |
 | **Serial** | Real serial ports via **termios**, **USB hot-plug** via IOKit; port + baud selectable; comm TRAP tasks 40–43. |
