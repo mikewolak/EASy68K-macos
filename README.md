@@ -98,10 +98,10 @@ graphics, sound effects and keyboard input:
 
 ## Sound, MIDI, Serial, Networking
 
-| Subsystem | What it does |
+| Subsystem | Hardware Support |
 |---|---|
 | **Sound** | Low-latency CoreAudio (`HALOutput` + lock-free SPSC ring buffer). WAVs of *any* rate/bit-depth are resampled with Apple's **mastering-grade SRC**. `SND_NOSTOP` semantics match the original. Output **device + L/R channel** selectable. |
-| **MIDI** | CoreMIDI in/out with **hot-plug** detection; device selection persisted; a new **MIDI I/O TRAP** (task 120) — *better than the original, which has no MIDI*. |
+| **MIDI** | CoreMIDI in/out with **hot-plug** detection; device selection persisted; a new **MIDI I/O TRAP** (task 120). |
 | **Serial** | Real serial ports via **termios**, **USB hot-plug** via IOKit; port + baud selectable; comm TRAP tasks 40–43. |
 | **Networking** | BSD-socket **TCP/UDP** (TRAP tasks 100–107) — client/server, send/receive, hostname resolution. |
 | **I/O interrupts** | A new **TRAP task 121** lets a program enable/disable **MIDI and serial RX/TX interrupts** (real 68000 autovector IRQs). Off by default; never affects programs that don't use them. |
