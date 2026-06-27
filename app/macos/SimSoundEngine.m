@@ -72,6 +72,7 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
     dispatch_source_t _loopTimer;       // tops up the ring for a looping sound
     AudioDeviceID  _deviceID;           // 0 = system default output
     int            _chL, _chR;          // device channels feeding L / R
+    BOOL           _running;            // AU initialized + started
 }
 
 + (instancetype)shared {
@@ -103,22 +104,28 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     AudioComponent comp = AudioComponentFindNext(NULL, &desc);
     if (!comp || AudioComponentInstanceNew(comp, &_unit) != noErr) { _unit = NULL; return; }
-    [self configureUnit];
+    [self startUnit];
 }
 
-// (Re)apply device, format, channel map and callback, then init + start. Called
-// at startup and whenever the device or channel routing changes.
-- (void)configureUnit {
+// Set device/format/callback on the (uninitialized) unit, then init + start.
+// Matches the proven SluiceAudio sequence: a HALOutput is NOT stopped or
+// uninitialized before its first init, and an unset device uses the default.
+- (void)startUnit {
     if (!_unit) return;
-    AudioOutputUnitStop(_unit);
-    AudioUnitUninitialize(_unit);
 
-    if (_deviceID)
+    if (_deviceID)        // only bind when a non-default device was chosen
         AudioUnitSetProperty(_unit, kAudioOutputUnitProperty_CurrentDevice,
                              kAudioUnitScope_Global, 0, &_deviceID, sizeof(_deviceID));
 
+    // Provide samples at the device's own output rate (no rate fighting).
+    AudioStreamBasicDescription hw = {0}; UInt32 sz = sizeof(hw);
+    _outRate = CANON_RATE;
+    if (AudioUnitGetProperty(_unit, kAudioUnitProperty_StreamFormat,
+                             kAudioUnitScope_Output, 0, &hw, &sz) == noErr && hw.mSampleRate > 0)
+        _outRate = hw.mSampleRate;
+
     AudioStreamBasicDescription fmt = {0};
-    fmt.mSampleRate = CANON_RATE;
+    fmt.mSampleRate = _outRate;
     fmt.mFormatID = kAudioFormatLinearPCM;
     fmt.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;  // interleaved
     fmt.mChannelsPerFrame = 2;
@@ -129,20 +136,25 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
     AudioUnitSetProperty(_unit, kAudioUnitProperty_StreamFormat,
                          kAudioUnitScope_Input, 0, &fmt, sizeof(fmt));
 
-    UInt32 maxFrames = 256;   // low-latency slice
-    AudioUnitSetProperty(_unit, kAudioUnitProperty_MaximumFramesPerSlice,
-                         kAudioUnitScope_Global, 0, &maxFrames, sizeof(maxFrames));
-
     AURenderCallbackStruct cb = { .inputProc = simRender, .inputProcRefCon = NULL };
     AudioUnitSetProperty(_unit, kAudioUnitProperty_SetRenderCallback,
                          kAudioUnitScope_Input, 0, &cb, sizeof(cb));
 
-    [self applyChannelMap];   // route our L/R to the chosen device channels
-
-    if (AudioUnitInitialize(_unit) == noErr) AudioOutputUnitStart(_unit);
+    if (AudioUnitInitialize(_unit) == noErr && AudioOutputUnitStart(_unit) == noErr) {
+        _running = YES;
+        [self applyChannelMap];   // safe on a running unit; no-op for default 0/1
+    }
 }
 
-// Map our 2 source channels (0=L, 1=R) onto the device's output channels.
+// Runtime device/channel change: stop + uninit the RUNNING unit, then re-setup.
+- (void)reconfigure {
+    if (!_unit) return;
+    if (_running) { AudioOutputUnitStop(_unit); AudioUnitUninitialize(_unit); _running = NO; }
+    [self startUnit];
+}
+
+// Map our 2 source channels (0=L, 1=R) onto chosen device channels. Like
+// SluiceAudio, the default 0/1 stereo case needs no map at all.
 - (void)applyChannelMap {
     if (!_unit) return;
     AudioStreamBasicDescription outf = {0}; UInt32 sz = sizeof(outf);
@@ -150,10 +162,11 @@ static OSStatus simRender(void *ref, AudioUnitRenderActionFlags *flags,
                              kAudioUnitScope_Output, 0, &outf, &sz) != noErr) return;
     int nOut = (int)outf.mChannelsPerFrame;
     if (nOut < 1) return;
+    if (_chL == 0 && _chR == (nOut > 1 ? 1 : 0)) return;   // default needs no map
     SInt32 *map = (SInt32 *)calloc(nOut, sizeof(SInt32));
     for (int i = 0; i < nOut; i++) map[i] = -1;            // -1 = silence
-    if (_chL >= 0 && _chL < nOut) map[_chL] = 0;           // device ch chL <- our L
-    if (_chR >= 0 && _chR < nOut) map[_chR] = 1;           // device ch chR <- our R
+    if (_chL >= 0 && _chL < nOut) map[_chL] = 0;
+    if (_chR >= 0 && _chR < nOut) map[_chR] = 1;
     AudioUnitSetProperty(_unit, kAudioOutputUnitProperty_ChannelMap,
                          kAudioUnitScope_Output, 0, map, (UInt32)(nOut * sizeof(SInt32)));
     free(map);
@@ -228,7 +241,7 @@ static NSString *cfStrProp(AudioObjectID obj, AudioObjectPropertySelector sel) {
 - (void)selectDeviceUID:(NSString *)uid {
     _deviceID = [self deviceForUID:uid];
     [[NSUserDefaults standardUserDefaults] setObject:(uid ?: @"") forKey:K_AUDIO_UID];
-    [self configureUnit];
+    [self reconfigure];
 }
 
 - (int)deviceChannelCount {
@@ -242,7 +255,7 @@ static NSString *cfStrProp(AudioObjectID obj, AudioObjectPropertySelector sel) {
     NSUserDefaults *u = [NSUserDefaults standardUserDefaults];
     [u setInteger:L forKey:K_AUDIO_CHL];
     [u setInteger:R forKey:K_AUDIO_CHR];
-    [self configureUnit];
+    [self reconfigure];
 }
 
 #pragma mark ring producer
@@ -279,6 +292,10 @@ static NSString *cfStrProp(AudioObjectID obj, AudioObjectPropertySelector sel) {
         sampleRate:_outRate channels:2 interleaved:YES];
     AVAudioConverter *conv = [[AVAudioConverter alloc] initFromFormat:src toFormat:dst];
     if (!conv) return empty;
+    // Upsample the original low-rate EASy68K WAVs (often 8 kHz / 11.025 kHz) to
+    // the device rate with Apple's highest-quality / mastering SRC.
+    conv.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering;
+    conv.sampleRateConverterQuality = AVAudioQualityMax;
     double ratio = _outRate / src.sampleRate;
     AVAudioFrameCount cap = (AVAudioFrameCount)(in.frameLength * ratio) + 8192;
     AVAudioPCMBuffer *outb = [[AVAudioPCMBuffer alloc] initWithPCMFormat:dst frameCapacity:cap];

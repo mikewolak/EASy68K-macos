@@ -20,6 +20,7 @@
 #import "AboutWindowController.h"
 #import "SettingsWindowController.h"
 #import "SimLogController.h"
+#import "SimSoundEngine.h"
 #import "E68Theme.h"
 
 @implementation AppDelegate
@@ -41,6 +42,10 @@
         port = (uint16_t)[pi.arguments[idx + 1] intValue];
     if (![pi.arguments containsObject:@"--no-control"] && port != 0)
         [[SimRemoteServer sharedServer] startOnPort:port];
+
+    // create the audio engine on the main thread at launch (CoreAudio HAL setup
+    // wants the main run loop; lazy creation on the sim thread can stall it)
+    (void)[SimSoundEngine shared];
 
     // restore the remembered MIDI input (audio device/channels self-restore)
     [SettingsWindowController restoreSavedDevices];
