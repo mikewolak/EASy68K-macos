@@ -29,3 +29,4 @@ games/easyzone/*.S68
 games/easyzone/*.L68
 signing.env
 build/installer/
+demos/gravityWave/*.L68
