@@ -38,6 +38,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSDictionary *)remoteState;                                     // regs + status
 - (NSString *)remoteMemoryAt:(uint32_t)addr length:(int)len;       // hex dump
 - (NSString *)remoteConsole;
+- (NSData *)remoteCanvasPNG;                                        // graphics canvas as PNG
 
 @end
 

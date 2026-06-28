@@ -35,6 +35,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setPenWidth:(int)w;                     // task 93
 - (void)setDrawingMode:(int)mode;               // task 92
 - (void)flip;                                   // task 94 / FormPaint — present frame
+- (NSData *)pngSnapshot;                         // PNG of the current presented frame
 
 // ---- primitives ----
 - (void)drawPixelX:(int)x y:(int)y;             // task 82

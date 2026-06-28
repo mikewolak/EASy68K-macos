@@ -881,6 +881,7 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
 }
 
 - (NSString *)remoteConsole { return self.consoleText ?: @""; }
+- (NSData *)remoteCanvasPNG { return [self.gfxView pngSnapshot]; }
 
 - (void)refreshMemory {
     if (!memory) return;

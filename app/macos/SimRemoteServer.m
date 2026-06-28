@@ -150,6 +150,13 @@ static id mainSync(id (^block)(void)) {
         NSString *t = mainSync(^{ return [[SimController sharedController] remoteMemoryAt:addr length:len]; });
         return [self sendText:fd text:t];
     }
+    if ([path isEqualToString:@"/sim/canvas"]) {     // graphics canvas as PNG
+        NSData *png = mainSync(^id{ return [[SimController sharedController] remoteCanvasPNG]; });
+        if (!png) { [self send:fd status:503 type:@"text/plain"
+                          body:[@"no canvas" dataUsingEncoding:NSUTF8StringEncoding]]; return; }
+        [self send:fd status:200 type:@"image/png" body:png];
+        return;
+    }
     if ([path isEqualToString:@"/source"] && [method isEqualToString:@"GET"]) {
         NSString *t = mainSync(^{ ASMDocument *d = [self frontDoc]; return d ? [d remoteSourceText] : @""; });
         return [self sendText:fd text:t];

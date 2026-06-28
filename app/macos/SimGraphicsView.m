@@ -17,6 +17,7 @@
 #import "SimGraphicsView.h"
 #import <CoreText/CoreText.h>
 #import <CoreVideo/CoreVideo.h>
+#import <ImageIO/ImageIO.h>
 
 #define MIN_W 640
 #define MIN_H 480
@@ -485,6 +486,28 @@ static int macCharToVK(unichar c) {
         }
         [_vsyncCond unlock];
     }
+}
+
+// PNG of the current presented frame (front buffer, or the back buffer if
+// nothing has been flipped yet).  Used by the /sim/canvas remote endpoint for
+// deterministic frame-by-frame capture.
+- (NSData *)pngSnapshot {
+    [_lock lock];
+    CGImageRef img = _frontImage ? CGImageRetain(_frontImage)
+                                 : CGBitmapContextCreateImage(_ctx);
+    [_lock unlock];
+    if (!img) return nil;
+    NSMutableData *data = [NSMutableData data];
+    CGImageDestinationRef dst =
+        CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data,
+                                         CFSTR("public.png"), 1, NULL);
+    if (dst) {
+        CGImageDestinationAddImage(dst, img, NULL);
+        CGImageDestinationFinalize(dst);
+        CFRelease(dst);
+    }
+    CGImageRelease(img);
+    return data.length ? data : nil;
 }
 
 // Called from the CVDisplayLink at the display refresh rate (~60 Hz).
