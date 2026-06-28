@@ -34,6 +34,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)remoteStop;
 - (void)remoteReset;
 - (void)remoteInput:(NSString *)text;
+- (void)remoteSetBreakpoint:(uint32_t)addr enabled:(BOOL)on;       // brkpt[] + gutter
 - (NSDictionary *)remoteState;                                     // regs + status
 - (NSString *)remoteMemoryAt:(uint32_t)addr length:(int)len;       // hex dump
 - (NSString *)remoteConsole;

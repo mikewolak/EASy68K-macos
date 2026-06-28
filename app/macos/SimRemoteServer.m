@@ -198,6 +198,12 @@ static id mainSync(id (^block)(void)) {
         if ([path isEqualToString:@"/sim/stop"])  { [sim remoteStop];  return @{ @"ok": @YES }; }
         if ([path isEqualToString:@"/sim/reset"]) { [sim remoteReset]; return [sim remoteState]; }
         if ([path isEqualToString:@"/sim/input"]) { [sim remoteInput:(query[@"text"] ?: body)]; return @{ @"ok": @YES }; }
+        if ([path isEqualToString:@"/sim/break"]) {
+            uint32_t a = (uint32_t)strtoul([query[@"addr"] UTF8String] ?: "0", NULL, 16);
+            BOOL on = !query[@"on"] || [query[@"on"] boolValue];
+            [sim remoteSetBreakpoint:a enabled:on];
+            return @{ @"ok": @YES, @"addr": @(a), @"enabled": @(on) };
+        }
 
         // --- EASyBIN binary/S-record utility (no modal panels) ---
         if ([path hasPrefix:@"/bin/"]) {

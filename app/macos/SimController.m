@@ -842,6 +842,10 @@ static NSTextView *MonoTextView(NSScrollView *scroll, BOOL editable) {
     self.inputField.stringValue = text ?: @"";
     [self inputEntered:nil];
 }
+- (void)remoteSetBreakpoint:(uint32_t)addr enabled:(BOOL)on {
+    [self.listingView setBreakpoint:addr enabled:on];
+    [self coreSetBreakpoint:addr enabled:on];
+}
 
 - (NSDictionary *)remoteState {
     NSMutableArray *d = [NSMutableArray array], *a = [NSMutableArray array];

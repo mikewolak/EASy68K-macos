@@ -48,7 +48,11 @@
         scroll.documentView = _table;
 
         NSTextField *al = [NSTextField labelWithString:@"Address:"];
-        _addrField = [[NSTextField alloc] init]; _addrField.placeholderString = @"00001000";
+        // A real, editable default (not just a placeholder) so the cursor can be
+        // placed on any digit and edited — e.g. change the last 0 to a 4.
+        _addrField = [[NSTextField alloc] init];
+        _addrField.placeholderString = @"00001000";
+        _addrField.stringValue = @"00001000";
         NSButton *addB    = [NSButton buttonWithTitle:@"Add"       target:self action:@selector(addTapped:)];
         addB.keyEquivalent = @"\r";
         NSButton *removeB = [NSButton buttonWithTitle:@"Remove"    target:self action:@selector(removeTapped:)];
@@ -94,7 +98,7 @@
     unsigned a = 0;
     if (sscanf(_addrField.stringValue.UTF8String ?: "", "%x", &a) == 1) {
         [self.bpDelegate addBreakpointAtAddress:(uint32_t)a];
-        _addrField.stringValue = @"";
+        _addrField.stringValue = [NSString stringWithFormat:@"%08X", a]; // keep editable
         [self refresh];
     }
 }
