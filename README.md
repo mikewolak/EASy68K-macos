@@ -126,7 +126,10 @@ Binary Utility*), on its own 16 MB buffer:
 
 Full canvas: pixel / line / rectangle / ellipse / fill / flood-fill / text /
 pen & fill colours / scroll / double-buffering, drawn into a Core Graphics
-offscreen bitmap and presented at a strict **60 FPS** via `CVDisplayLink`.
+offscreen bitmap and presented via `CVDisplayLink`. With double buffering on,
+the present (TRAP #15 task 94) is **vsync-locked** — it blocks until the next
+refresh — so animation runs **frame-locked at 60 FPS** (it waits two vsyncs per
+frame on a 120 Hz ProMotion panel) with no tearing or free-running.
 **Full-screen** scales the canvas centred, **preserving exact aspect ratio**
 with black letterbox/pillarbox.
 
@@ -207,6 +210,8 @@ endpoints return `application/json`. `GET /` returns the list of endpoints.
 | `POST /sim/input?text=STR` | Feed a line to the console (TRAP input) |
 | `GET  /memory?addr=HEX&len=N` | Hex/ASCII dump of simulator memory (`len` default 256) |
 | `GET  /console` | The I/O console text |
+| `GET  /sim/canvas` | The graphics canvas as a **PNG** (current presented frame) |
+| `POST /sim/break?addr=HEX&on=1` | Set/clear a breakpoint at `addr` (`on=0` to clear) |
 
 `/status` returns JSON:
 
