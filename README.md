@@ -130,6 +130,17 @@ offscreen bitmap and presented at a strict **60 FPS** via `CVDisplayLink`.
 **Full-screen** scales the canvas centred, **preserving exact aspect ratio**
 with black letterbox/pillarbox.
 
+The **gravity-wave** demo (`demos/gravityWave/`) is a vsync-locked **60 FPS**
+green wireframe of a LIGO-style binary inspiral: two solid bodies spiral inward
+and their orbital motion radiates the rippling "gravity-wave" sheet
+(`z = 60·cos(2·atan2(y,x) − Θ + 0.544331·r) / (20 + r)`, after this
+[Wolfram visualization](https://community.wolfram.com/groups/-/m/t/790989)).
+The wave phase is locked to **twice** the orbital phase (the quadrupole *m=2*
+relation), it **chirps** toward merger, then rings down — all in hand-written
+68000 assembly with the trig / `atan2` / projection baked into lookup tables:
+
+![Gravity-wave binary-inspiral demo — vsync-locked 60 FPS 68000 wireframe](demos/gravityWave/gravityWave.gif)
+
 The **EASYZONE** game (a Battlezone-style 68000 vector game) runs end-to-end —
 graphics, sound effects and keyboard input:
 
@@ -250,6 +261,8 @@ CoreVideo, AVFoundation, AudioToolbox, CoreAudio, CoreMIDI, IOKit.
 ## Demos
 
 - `games/easyzone/` — the **EASYZONE** vector game (graphics, sound, keyboard).
+- `demos/gravityWave/` — animated **gravity-wave** binary inspiral (3D wireframe,
+  vsync-locked 60 FPS); `gen.py` bakes the trig / projection into the asm tables.
 - `demos/` — `bitmap`, `lineArt`, `bouncingBall`, `land` (graphics + structured
   asm + `INCLUDE`).
 - `tests/hw/knightrider.X68` — exercises the hardware panel: a timer-interrupt-
