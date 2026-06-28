@@ -51,6 +51,9 @@
     BOOL _backDirty;            // back buffer changed since last present
     uint64_t _presentSerial;    // bumped on each flip
     uint64_t _shownSerial;      // last serial pushed to the view
+    NSCondition *_vsyncCond;    // signalled by the display link each refresh
+    uint64_t _vsyncCount;       // bumped on every vsyncTick (frame-lock handshake)
+    int _ticksPerFrame;         // vsyncs per presented frame (caps to ~60 FPS)
 }
 
 static CVReturn simDisplayLinkCB(CVDisplayLinkRef dl, const CVTimeStamp *now,
@@ -73,6 +76,7 @@ static CGColorRef bgrColor(uint32_t c) {
         _lineBGR = 0xFFFFFF; _fillBGR = 0x000000; _fontBGR = 0xFFFFFF;
         _penWidth = 1; _penMode = 13; _fontSize = 16;
         _doubleBuffer = NO;
+        _vsyncCond = [NSCondition new];
         [self rebuildContext];
 
         // vsync-locked 60 FPS presentation: the sim thread draws into the back
@@ -458,7 +462,30 @@ static int macCharToVK(unichar c) {
 }
 
 // TRAP #15 task 94 / FormPaint — present the completed frame.
-- (void)flip { [_lock lock]; [self snapshotLocked]; [_lock unlock]; }
+// When double-buffered, this blocks the (background) sim thread until the
+// display link presents the next refresh, frame-locking the program to the
+// screen's refresh rate (swap-on-vsync semantics).  A short timeout keeps it
+// from hanging if the link is stalled (window hidden, run stopped, etc.).
+- (void)flip {
+    [_lock lock]; [self snapshotLocked]; BOOL db = _doubleBuffer; [_lock unlock];
+    if (db) {
+        // Present at ~60 FPS: on a high-refresh panel (e.g. 120 Hz ProMotion)
+        // wait two vsyncs per frame, on a 60 Hz panel wait one.
+        if (_ticksPerFrame == 0) {
+            double p = _displayLink ? CVDisplayLinkGetActualOutputVideoRefreshPeriod(_displayLink) : 0;
+            double hz = (p > 0) ? 1.0/p : 60.0;
+            _ticksPerFrame = (int)lround(hz/60.0);
+            if (_ticksPerFrame < 1) _ticksPerFrame = 1;
+        }
+        [_vsyncCond lock];
+        uint64_t target = _vsyncCount + _ticksPerFrame;
+        while (_vsyncCount < target) {
+            if (![_vsyncCond waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]])
+                break;                                  // vsync timed out -> don't stall
+        }
+        [_vsyncCond unlock];
+    }
+}
 
 // Called from the CVDisplayLink at the display refresh rate (~60 Hz).
 - (void)vsyncTick {
@@ -469,6 +496,8 @@ static int macCharToVK(unichar c) {
     BOOL haveNew = (_presentSerial != _shownSerial);
     _shownSerial = _presentSerial;
     [_lock unlock];
+    // release any sim thread blocked in flip() — one tick = one frame
+    [_vsyncCond lock]; _vsyncCount++; [_vsyncCond broadcast]; [_vsyncCond unlock];
     if (haveNew)
         dispatch_async(dispatch_get_main_queue(), ^{ self.needsDisplay = YES; });
 }
